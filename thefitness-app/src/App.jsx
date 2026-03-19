@@ -254,7 +254,7 @@ export default function App() {
       <div className="entry-header">
         <img src={logo} alt="더피트니스 화정점 로고" className="main-logo" />
         <h1>더피트니스 화정점</h1>
-        <p>관리자용 회원 관리 화면과 회원 전용 확인 화면을 분리한 버전입니다.</p>
+        <p>관리자용 회원 관리 화면과 회원 전용 확인 화면입니다.</p>
       </div>
 
       <div className="entry-grid">
