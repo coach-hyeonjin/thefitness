@@ -1038,53 +1038,177 @@ export default function AdminDashboard({ user, profile, onLogout }) {
 
       {activeTab === '회원' && (
         <div className="tab-page">
-          <div className="top-grid">
-            <section className="card">
-              <h2>회원 추가</h2>
-              <div className="form-block">
-                <input
-                  placeholder="회원 이름"
-                  value={memberForm.name}
-                  onChange={(e) => setMemberForm({ ...memberForm, name: e.target.value })}
-                />
-                <input
-                  placeholder="목표"
-                  value={memberForm.goal}
-                  onChange={(e) => setMemberForm({ ...memberForm, goal: e.target.value })}
-                />
-                <div className="grid-2">
-                  <input
-                    type="number"
-                    placeholder="총 세션"
-                    value={memberForm.total_sessions}
-                    onChange={(e) => setMemberForm({ ...memberForm, total_sessions: e.target.value })}
-                  />
-                  <input type="number" placeholder="사용 세션(자동 계산)" value={memberForm.used_sessions} disabled />
+          {selectedMember && (
+            <section className="card section-card">
+              <div className="section-head">
+                <div>
+                  <div className="section-label">선택 회원</div>
+                  <h2>{selectedMember.name}</h2>
                 </div>
-                <div className="grid-2">
-                  <input
-                    type="date"
-                    value={memberForm.start_date}
-                    onChange={(e) => setMemberForm({ ...memberForm, start_date: e.target.value })}
-                  />
-                  <input
-                    type="date"
-                    value={memberForm.end_date}
-                    onChange={(e) => setMemberForm({ ...memberForm, end_date: e.target.value })}
-                  />
+                <div className="button-row">
+                  <button className="secondary-btn" onClick={() => openMemberEdit(selectedMember)}>회원 수정</button>
+                  <button className="danger-btn" onClick={() => deleteMember(selectedMember.id)}>회원 삭제</button>
                 </div>
-                <textarea
-                  placeholder="메모"
-                  value={memberForm.memo}
-                  onChange={(e) => setMemberForm({ ...memberForm, memo: e.target.value })}
-                />
-                <button className="primary-btn" onClick={addMember}>회원 추가</button>
+              </div>
+
+              <div className="summary-grid">
+                <div className="summary-box">
+                  <div className="summary-label">목표</div>
+                  <div className="summary-value">{selectedMember.goal || '미입력'}</div>
+                </div>
+                <div className="summary-box">
+                  <div className="summary-label">세션</div>
+                  <div className="summary-value">{selectedMember.used_sessions} / {selectedMember.total_sessions}회</div>
+                </div>
+                <div className="summary-box">
+                  <div className="summary-label">기간</div>
+                  <div className="summary-value">{selectedMember.start_date || '-'} ~ {selectedMember.end_date || '-'}</div>
+                </div>
+                <div className="summary-box">
+                  <div className="summary-label">남은 세션</div>
+                  <div className="summary-value">{Math.max(selectedMember.total_sessions - selectedMember.used_sessions, 0)}회</div>
+                </div>
+              </div>
+
+              <div className="progress-wrap">
+                <div className="progress-bar">
+                  <div className="progress-fill" style={{ width: `${progress}%` }} />
+                </div>
+              </div>
+
+              <div className="memo-box">
+                <div className="memo-title">메모</div>
+                <div>{selectedMember.memo || '메모 없음'}</div>
+              </div>
+
+              <div className="member-link-box">
+                <div className="memo-title">회원 링크 / 코드</div>
+                <div className="link-line">링크: {`${window.location.origin}?member=${selectedMember.id}`}</div>
+                <div className="link-line">코드: <strong>{selectedMember.access_code || '-'}</strong></div>
+                <div className="button-row">
+                  <button className="secondary-btn" onClick={() => copyText(`${window.location.origin}?member=${selectedMember.id}`)}>
+                    링크 복사
+                  </button>
+                  <button className="secondary-btn" onClick={() => copyText(selectedMember.access_code || '')}>
+                    코드 복사
+                  </button>
+                </div>
               </div>
             </section>
+          )}
 
-            <section className="card">
-              <h2>회원 목록</h2>
-              <div className="member-list">
+          <div className="admin-grid">
+            <section className="card section-card">
+              <div className="section-head">
+                <div>
+                  <div className="section-label">{editMemberId ? '회원 수정' : '회원 추가'}</div>
+                  <h2>{editMemberId ? '회원 정보 수정' : '새 회원 등록'}</h2>
+                </div>
+                {editMemberId && (
+                  <button className="secondary-btn" onClick={closeMemberEdit}>수정 취소</button>
+                )}
+              </div>
+
+              {!editMemberId ? (
+                <div className="form-block">
+                  <input
+                    placeholder="회원 이름"
+                    value={memberForm.name}
+                    onChange={(e) => setMemberForm({ ...memberForm, name: e.target.value })}
+                  />
+                  <input
+                    placeholder="목표"
+                    value={memberForm.goal}
+                    onChange={(e) => setMemberForm({ ...memberForm, goal: e.target.value })}
+                  />
+                  <div className="grid-2">
+                    <input
+                      type="number"
+                      placeholder="총 세션"
+                      value={memberForm.total_sessions}
+                      onChange={(e) => setMemberForm({ ...memberForm, total_sessions: e.target.value })}
+                    />
+                    <input type="number" placeholder="사용 세션" value={memberForm.used_sessions} disabled />
+                  </div>
+                  <div className="grid-2">
+                    <input
+                      type="date"
+                      value={memberForm.start_date}
+                      onChange={(e) => setMemberForm({ ...memberForm, start_date: e.target.value })}
+                    />
+                    <input
+                      type="date"
+                      value={memberForm.end_date}
+                      onChange={(e) => setMemberForm({ ...memberForm, end_date: e.target.value })}
+                    />
+                  </div>
+                  <textarea
+                    placeholder="메모"
+                    value={memberForm.memo}
+                    onChange={(e) => setMemberForm({ ...memberForm, memo: e.target.value })}
+                  />
+                  <button className="primary-btn" onClick={addMember}>회원 추가</button>
+                </div>
+              ) : (
+                <div className="form-block">
+                  <input
+                    placeholder="회원 이름"
+                    value={editMemberForm.name}
+                    onChange={(e) => setEditMemberForm({ ...editMemberForm, name: e.target.value })}
+                  />
+                  <input
+                    placeholder="목표"
+                    value={editMemberForm.goal}
+                    onChange={(e) => setEditMemberForm({ ...editMemberForm, goal: e.target.value })}
+                  />
+                  <div className="grid-2">
+                    <input
+                      type="number"
+                      placeholder="총 세션"
+                      value={editMemberForm.total_sessions}
+                      onChange={(e) => setEditMemberForm({ ...editMemberForm, total_sessions: e.target.value })}
+                    />
+                    <input
+                      type="text"
+                      value={
+                        selectedMember && selectedMember.id === editMemberId
+                          ? `${selectedMember.used_sessions}회 (자동 계산)`
+                          : '자동 계산'
+                      }
+                      disabled
+                    />
+                  </div>
+                  <div className="grid-2">
+                    <input
+                      type="date"
+                      value={editMemberForm.start_date}
+                      onChange={(e) => setEditMemberForm({ ...editMemberForm, start_date: e.target.value })}
+                    />
+                    <input
+                      type="date"
+                      value={editMemberForm.end_date}
+                      onChange={(e) => setEditMemberForm({ ...editMemberForm, end_date: e.target.value })}
+                    />
+                  </div>
+                  <textarea
+                    placeholder="메모"
+                    value={editMemberForm.memo}
+                    onChange={(e) => setEditMemberForm({ ...editMemberForm, memo: e.target.value })}
+                  />
+                  <button className="primary-btn" onClick={updateMember}>회원 정보 저장</button>
+                </div>
+              )}
+            </section>
+
+            <section className="card section-card">
+              <div className="section-head">
+                <div>
+                  <div className="section-label">회원 목록</div>
+                  <h2>등록된 회원</h2>
+                </div>
+              </div>
+
+              <div className="member-list modern-list">
                 {loadingMembers ? (
                   <div className="muted">불러오는 중...</div>
                 ) : members.length === 0 ? (
@@ -1093,15 +1217,20 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                   members.map((member) => (
                     <div
                       key={member.id}
-                      className={`member-item ${selectedMemberId === member.id ? 'active' : ''}`}
+                      className={`member-card ${selectedMemberId === member.id ? 'active' : ''}`}
                       onClick={() => setSelectedMemberId(member.id)}
                     >
-                      <div className="member-name">{member.name}</div>
-                      <div className="member-goal">{member.goal || '목표 미입력'}</div>
-                      <div className="member-session">
-                        {member.used_sessions} / {member.total_sessions}회
+                      <div className="member-card-top">
+                        <div>
+                          <div className="member-card-name">{member.name}</div>
+                          <div className="member-card-goal">{member.goal || '목표 미입력'}</div>
+                        </div>
+                        <div className="member-card-session">
+                          {member.used_sessions} / {member.total_sessions}
+                        </div>
                       </div>
-                      <div className="muted">
+
+                      <div className="member-card-sub">
                         남은 세션 {Math.max(member.total_sessions - member.used_sessions, 0)}회
                       </div>
 
@@ -1132,508 +1261,395 @@ export default function AdminDashboard({ user, profile, onLogout }) {
             </section>
           </div>
 
-          {editMemberId && (
-            <section className="card">
+          {selectedMember && (
+            <section className="card section-card">
               <div className="section-head">
-                <h2>회원 수정</h2>
-                <button className="secondary-btn" onClick={closeMemberEdit}>닫기</button>
+                <div>
+                  <div className="section-label">회원 루틴 관리</div>
+                  <h2>{selectedMember.name}님 루틴</h2>
+                </div>
               </div>
 
-              <div className="grid-2">
-                <input
-                  placeholder="회원 이름"
-                  value={editMemberForm.name}
-                  onChange={(e) => setEditMemberForm({ ...editMemberForm, name: e.target.value })}
-                />
-                <input
-                  placeholder="목표"
-                  value={editMemberForm.goal}
-                  onChange={(e) => setEditMemberForm({ ...editMemberForm, goal: e.target.value })}
-                />
-              </div>
+              {loadingRoutines ? (
+                <div className="muted">루틴 불러오는 중...</div>
+              ) : (
+                <div className="routine-admin-list">
+                  {routineRows.map((row) => (
+                    <div className="routine-admin-card" key={row.dayKey}>
+                      <div className="memo-title">{row.dayLabel}</div>
+                      <input
+                        placeholder="루틴 제목 예: 상체 루틴"
+                        value={row.title}
+                        onChange={(e) => updateRoutineRow(row.dayKey, 'title', e.target.value)}
+                      />
+                      <textarea
+                        placeholder="운동 목록을 쉼표(,)로 구분해서 입력&#10;예: 벤치프레스, 랫풀다운, 숄더프레스"
+                        value={row.exercisesText}
+                        onChange={(e) => updateRoutineRow(row.dayKey, 'exercisesText', e.target.value)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
 
-              <div className="grid-2" style={{ marginTop: 12 }}>
-                <input
-                  type="number"
-                  placeholder="총 세션"
-                  value={editMemberForm.total_sessions}
-                  onChange={(e) => setEditMemberForm({ ...editMemberForm, total_sessions: e.target.value })}
-                />
-                <input
-                  type="text"
-                  value={
-                    selectedMember && selectedMember.id === editMemberId
-                      ? `${selectedMember.used_sessions}회 (자동 계산)`
-                      : '자동 계산'
-                  }
-                  disabled
-                />
-              </div>
-
-              <div className="grid-2" style={{ marginTop: 12 }}>
-                <input
-                  type="date"
-                  value={editMemberForm.start_date}
-                  onChange={(e) => setEditMemberForm({ ...editMemberForm, start_date: e.target.value })}
-                />
-                <input
-                  type="date"
-                  value={editMemberForm.end_date}
-                  onChange={(e) => setEditMemberForm({ ...editMemberForm, end_date: e.target.value })}
-                />
-              </div>
-
-              <div style={{ marginTop: 12 }}>
-                <textarea
-                  placeholder="메모"
-                  value={editMemberForm.memo}
-                  onChange={(e) => setEditMemberForm({ ...editMemberForm, memo: e.target.value })}
-                />
-              </div>
-
-              <div className="button-row" style={{ marginTop: 12 }}>
-                <button className="primary-btn" onClick={updateMember}>회원 정보 저장</button>
-                <button className="secondary-btn" onClick={closeMemberEdit}>취소</button>
+              <div className="button-row" style={{ marginTop: 16 }}>
+                <button className="primary-btn" onClick={saveMemberRoutines} disabled={savingRoutines}>
+                  {savingRoutines ? '루틴 저장 중...' : '회원 루틴 저장'}
+                </button>
+                <button className="secondary-btn" onClick={resetMemberRoutines}>
+                  입력 초기화
+                </button>
               </div>
             </section>
-          )}
-
-          {selectedMember && (
-            <>
-              <section className="card">
-                <h2>회원 정보</h2>
-                <div className="member-header">
-                  <div>
-                    <div className="title-lg">{selectedMember.name}</div>
-                    <div className="pill">목표: {selectedMember.goal || '미입력'}</div>
-                  </div>
-                  <div className="session-big">
-                    {selectedMember.used_sessions} / {selectedMember.total_sessions}회
-                  </div>
-                </div>
-
-                <div className="progress-wrap">
-                  <div className="progress-bar">
-                    <div className="progress-fill" style={{ width: `${progress}%` }} />
-                  </div>
-                  <div className="muted">
-                    남은 세션: {Math.max(selectedMember.total_sessions - selectedMember.used_sessions, 0)}회
-                  </div>
-                </div>
-
-                <div className="grid-2 stat-grid">
-                  <div className="soft-card green">
-                    <div className="muted">시작일</div>
-                    <div className="stat-number small">{selectedMember.start_date || '-'}</div>
-                  </div>
-                  <div className="soft-card">
-                    <div className="muted">종료일</div>
-                    <div className="stat-number small">{selectedMember.end_date || '-'}</div>
-                  </div>
-                </div>
-
-                <div className="memo-box">
-                  <div className="memo-title">특이사항 / 메모</div>
-                  <div>{selectedMember.memo || '메모 없음'}</div>
-                </div>
-
-                <div className="member-link-box">
-                  <div className="memo-title">회원 전용 링크 / 코드</div>
-                  <div className="link-line">링크: {`${window.location.origin}?member=${selectedMember.id}`}</div>
-                  <div className="link-line">코드: <strong>{selectedMember.access_code || '-'}</strong></div>
-                  <div className="button-row">
-                    <button className="secondary-btn" onClick={() => copyText(`${window.location.origin}?member=${selectedMember.id}`)}>
-                      링크 복사
-                    </button>
-                    <button className="secondary-btn" onClick={() => copyText(selectedMember.access_code || '')}>
-                      코드 복사
-                    </button>
-                  </div>
-                </div>
-              </section>
-
-              <section className="card">
-                <div className="section-head">
-                  <h2>회원 루틴 관리</h2>
-                  <div className="muted">{selectedMember.name}님 루틴</div>
-                </div>
-
-                {loadingRoutines ? (
-                  <div className="muted">루틴 불러오는 중...</div>
-                ) : (
-                  <div className="routine-admin-list">
-                    {routineRows.map((row) => (
-                      <div className="routine-admin-card" key={row.dayKey}>
-                        <div className="memo-title">{row.dayLabel}</div>
-                        <input
-                          placeholder="루틴 제목 예: 상체 루틴"
-                          value={row.title}
-                          onChange={(e) => updateRoutineRow(row.dayKey, 'title', e.target.value)}
-                        />
-                        <textarea
-                          placeholder="운동 목록을 쉼표(,)로 구분해서 입력&#10;예: 벤치프레스, 랫풀다운, 숄더프레스"
-                          value={row.exercisesText}
-                          onChange={(e) => updateRoutineRow(row.dayKey, 'exercisesText', e.target.value)}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="button-row" style={{ marginTop: 16 }}>
-                  <button className="primary-btn" onClick={saveMemberRoutines} disabled={savingRoutines}>
-                    {savingRoutines ? '루틴 저장 중...' : '회원 루틴 저장'}
-                  </button>
-                  <button className="secondary-btn" onClick={resetMemberRoutines}>
-                    입력 초기화
-                  </button>
-                </div>
-              </section>
-            </>
           )}
         </div>
       )}
 
       {activeTab === '기록작성' && (
         <div className="tab-page">
-          <section className="card">
-            <h2>{editingWorkoutId ? '운동 기록 수정' : '운동 기록 작성'}</h2>
-
-            {!selectedMember ? (
-              <div className="muted">회원 탭에서 회원을 먼저 선택해 주세요.</div>
-            ) : (
-              <>
-                <div className="memo-box" style={{ marginTop: 0 }}>
-                  <div className="memo-title">대상 회원</div>
-                  <div>{selectedMember.name}</div>
-                  <div className="muted">남은 세션 {Math.max(selectedMember.total_sessions - selectedMember.used_sessions, 0)}회</div>
+          {selectedMember && (
+            <section className="card section-card">
+              <div className="section-head">
+                <div>
+                  <div className="section-label">선택 회원</div>
+                  <h2>{selectedMember.name}</h2>
                 </div>
+                <div className="pill">남은 세션 {Math.max(selectedMember.total_sessions - selectedMember.used_sessions, 0)}회</div>
+              </div>
 
-                <div className="grid-2" style={{ marginTop: 16 }}>
-                  <div>
-                    <label>날짜</label>
-                    <input
-                      type="date"
-                      value={workoutDraft.date}
-                      onChange={(e) => setWorkoutDraft({ ...workoutDraft, date: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <label>운동 부위</label>
-                    <div className="bodypart-wrap">
-                      {bodyPartOptions.map((part) => (
-                        <button
-                          type="button"
-                          key={part}
-                          className={`part-btn ${workoutDraft.bodyParts.includes(part) ? 'on' : ''}`}
-                          onClick={() => toggleBodyPart(part)}
-                        >
-                          {part}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+              <div className="summary-grid">
+                <div className="summary-box">
+                  <div className="summary-label">목표</div>
+                  <div className="summary-value">{selectedMember.goal || '미입력'}</div>
                 </div>
-
-                <div className="section-head">
-                  <h3>운동 목록</h3>
-                  <button className="secondary-btn" onClick={addWorkoutItem}>+ 운동 추가</button>
+                <div className="summary-box">
+                  <div className="summary-label">진행 세션</div>
+                  <div className="summary-value">{selectedMember.used_sessions} / {selectedMember.total_sessions}</div>
                 </div>
+                <div className="summary-box">
+                  <div className="summary-label">이번달 PT</div>
+                  <div className="summary-value">{currentMonthPtCount}회</div>
+                </div>
+                <div className="summary-box">
+                  <div className="summary-label">이번달 개인운동</div>
+                  <div className="summary-value">{currentMonthSelfCount}회</div>
+                </div>
+              </div>
+            </section>
+          )}
 
-                {workoutDraft.items.map((item, itemIndex) => (
-                  <div className="workout-card" key={item.id}>
-                    <div className="workout-card-head">
-                      <strong>운동 {itemIndex + 1}</strong>
-                      {workoutDraft.items.length > 1 && (
-                        <button className="danger-btn" onClick={() => removeWorkoutItem(itemIndex)}>삭제</button>
-                      )}
+          <div className="admin-grid">
+            <section className="card section-card">
+              <div className="section-head">
+                <div>
+                  <div className="section-label">{editingWorkoutId ? '기록 수정' : '운동 기록 작성'}</div>
+                  <h2>{editingWorkoutId ? '운동 기록 수정하기' : '운동 기록 입력'}</h2>
+                </div>
+              </div>
+
+              {!selectedMember ? (
+                <div className="muted">회원 탭에서 회원을 먼저 선택해 주세요.</div>
+              ) : (
+                <>
+                  <div className="grid-2">
+                    <div>
+                      <label>날짜</label>
+                      <input
+                        type="date"
+                        value={workoutDraft.date}
+                        onChange={(e) => setWorkoutDraft({ ...workoutDraft, date: e.target.value })}
+                      />
                     </div>
-
-                    <div className="grid-3">
-                      <select
-                        value={item.category}
-                        onChange={(e) => updateWorkoutItem(itemIndex, { category: e.target.value })}
-                      >
-                        {categoryOptions.map((o) => <option key={o}>{o}</option>)}
-                      </select>
-
-                      <select
-                        value={item.bodyPart}
-                        onChange={(e) => updateWorkoutItem(itemIndex, { bodyPart: e.target.value })}
-                      >
-                        {bodyPartOptions.map((o) => <option key={o}>{o}</option>)}
-                      </select>
-
-                      <select
-                        value={item.brand}
-                        onChange={(e) => updateWorkoutItem(itemIndex, { brand: e.target.value })}
-                      >
-                        {brandNames.map((o) => <option key={o}>{o}</option>)}
-                      </select>
-                    </div>
-
-                    <input
-                      placeholder="운동명 입력"
-                      value={item.exerciseName}
-                      onChange={(e) => updateWorkoutItem(itemIndex, { exerciseName: e.target.value })}
-                    />
-
-                    <div className="mini-ex-list">
-                      {filteredExercises
-                        .filter((exercise) => !item.bodyPart || exercise.body_part === item.bodyPart)
-                        .slice(0, 6)
-                        .map((exercise) => (
+                    <div>
+                      <label>운동 부위</label>
+                      <div className="bodypart-wrap">
+                        {bodyPartOptions.map((part) => (
                           <button
                             type="button"
-                            key={exercise.id}
-                            className="mini-ex-item"
-                            onClick={() => applyExercise(itemIndex, exercise)}
+                            key={part}
+                            className={`part-btn ${workoutDraft.bodyParts.includes(part) ? 'on' : ''}`}
+                            onClick={() => toggleBodyPart(part)}
                           >
-                            {exercise.name} · {exercise.brand_name}
+                            {part}
                           </button>
                         ))}
-                    </div>
-
-                    <div className="set-card-wrap">
-                      {item.sets.map((setRow, setIndex) => (
-                        <div className="set-card" key={`${item.id}-set-${setIndex}`}>
-                          <div className="set-card-head">
-                            <strong>{setIndex + 1}세트</strong>
-                            {item.sets.length > 1 && (
-                              <button
-                                type="button"
-                                className="danger-btn"
-                                onClick={() => removeSet(itemIndex, setIndex)}
-                              >
-                                세트 삭제
-                              </button>
-                            )}
-                          </div>
-
-                          <div className="grid-2">
-                            <div>
-                              <label>무게(kg)</label>
-                              <input
-                                type="number"
-                                min="0"
-                                value={setRow.kg}
-                                onChange={(e) => updateSet(itemIndex, setIndex, 'kg', e.target.value)}
-                              />
-                            </div>
-                            <div>
-                              <label>횟수(reps)</label>
-                              <input
-                                type="number"
-                                min="0"
-                                value={setRow.reps}
-                                onChange={(e) => updateSet(itemIndex, setIndex, 'reps', e.target.value)}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="button-row" style={{ marginTop: 12 }}>
-                      <button type="button" className="secondary-btn" onClick={() => addSet(itemIndex)}>
-                        + 세트 추가
-                      </button>
-                    </div>
-
-                    <div className="grid-2">
-                      <textarea
-                        placeholder="잘한 점"
-                        value={item.goodPoint}
-                        onChange={(e) => updateWorkoutItem(itemIndex, { goodPoint: e.target.value })}
-                      />
-                      <textarea
-                        placeholder="보완할 점"
-                        value={item.improvePoint}
-                        onChange={(e) => updateWorkoutItem(itemIndex, { improvePoint: e.target.value })}
-                      />
+                      </div>
                     </div>
                   </div>
-                ))}
 
-                <div className="save-row">
-                  {editingWorkoutId ? (
-                    <>
-                      <button className="primary-btn" onClick={updateWorkoutRecord}>기록 수정 저장</button>
-                      <button
-                        className="secondary-btn"
-                        onClick={() => {
-                          setEditingWorkoutId(null)
-                          setWorkoutDraft({
-                            date: getKoreaDateString(),
-                            bodyParts: [],
-                            items: [createWorkoutItem()],
-                          })
-                        }}
-                      >
-                        수정 취소
-                      </button>
-                    </>
-                  ) : (
-                    <button className="primary-btn" onClick={saveWorkoutRecord}>기록 저장</button>
-                  )}
-                </div>
-              </>
-            )}
-          </section>
+                  <div className="section-head" style={{ marginTop: 18 }}>
+                    <h3 style={{ margin: 0 }}>운동 목록</h3>
+                    <button className="secondary-btn" onClick={addWorkoutItem}>+ 운동 추가</button>
+                  </div>
 
-          <section className="card">
-            <h2>저장된 운동 기록</h2>
-
-            {!selectedMember ? (
-              <div className="muted">회원 탭에서 회원을 먼저 선택해 주세요.</div>
-            ) : workoutHistory.length === 0 ? (
-              <div className="muted">저장된 기록이 없습니다.</div>
-            ) : (
-              <div className="history-list">
-                {workoutHistory.map((workout) => {
-                  const groupedItems = groupWorkoutItems(workout.workout_items || [])
-                  const isExpanded = expandedWorkoutIds.includes(workout.id)
-                  const exerciseCount = groupedItems.length
-                  const totalSets = groupedItems.reduce((sum, item) => sum + item.sets.length, 0)
-
-                  return (
-                    <div className="history-card" key={workout.id}>
-                      <div className="history-head">
-                        <div>
-                          <strong>{workout.workout_date}</strong>
-                          <div className="muted">
-                            구분: {(workout.workout_type || 'pt') === 'self' ? '개인운동' : 'PT'} / 부위: {(workout.body_parts || []).join(', ') || '-'}
-                          </div>
-                          <div className="muted" style={{ marginTop: 6 }}>
-                            요약: 운동 {exerciseCount}개 / 총 {totalSets}세트
-                          </div>
-                        </div>
-
-                        <div className="button-row">
-                          <button
-                            className="secondary-btn"
-                            onClick={() => toggleWorkoutDetail(workout.id)}
-                          >
-                            {isExpanded ? '상세 닫기' : '상세 보기'}
-                          </button>
-                          <button className="secondary-btn" onClick={() => editWorkoutRecord(workout)}>
-                            운동 수정
-                          </button>
-                          <button className="danger-btn" onClick={() => deleteWorkoutRecord(workout.id)}>
-                            운동 삭제
-                          </button>
-                        </div>
+                  {workoutDraft.items.map((item, itemIndex) => (
+                    <div className="workout-card modern-card" key={item.id}>
+                      <div className="workout-card-head">
+                        <strong>운동 {itemIndex + 1}</strong>
+                        {workoutDraft.items.length > 1 && (
+                          <button className="danger-btn" onClick={() => removeWorkoutItem(itemIndex)}>삭제</button>
+                        )}
                       </div>
 
-                      {isExpanded && (
-                        <div className="history-list" style={{ marginTop: 12 }}>
-                          {groupedItems.map((item) => (
-                            <div key={item.id} className="history-item">
-                              <div><strong>{item.exerciseName}</strong></div>
+                      <div className="grid-3">
+                        <select
+                          value={item.category}
+                          onChange={(e) => updateWorkoutItem(itemIndex, { category: e.target.value })}
+                        >
+                          {categoryOptions.map((o) => <option key={o}>{o}</option>)}
+                        </select>
 
-                              <div className="tag-row" style={{ marginTop: 8 }}>
-                                <span className="tag">{item.bodyPart}</span>
-                                <span className="tag">{item.category}</span>
-                                <span className="tag">{item.brand}</span>
-                              </div>
+                        <select
+                          value={item.bodyPart}
+                          onChange={(e) => updateWorkoutItem(itemIndex, { bodyPart: e.target.value })}
+                        >
+                          {bodyPartOptions.map((o) => <option key={o}>{o}</option>)}
+                        </select>
 
-                              <div className="history-sets" style={{ marginTop: 10 }}>
-                                {item.sets.map((setRow) => (
-                                  <span key={setRow.id} className="tag">
-                                    {setRow.setNo}세트 · {setRow.kg}kg · {setRow.reps}회
-                                  </span>
-                                ))}
-                              </div>
+                        <select
+                          value={item.brand}
+                          onChange={(e) => updateWorkoutItem(itemIndex, { brand: e.target.value })}
+                        >
+                          {brandNames.map((o) => <option key={o}>{o}</option>)}
+                        </select>
+                      </div>
 
-                              {(item.goodPoint || item.improvePoint) && (
-                                <div className="member-feedback-grid" style={{ marginTop: 12 }}>
-                                  <div className="feedback good">
-                                    <div className="memo-title">잘한 점</div>
-                                    <div>{item.goodPoint || '-'}</div>
-                                  </div>
-                                  <div className="feedback warn">
-                                    <div className="memo-title">보완할 점</div>
-                                    <div>{item.improvePoint || '-'}</div>
-                                  </div>
-                                </div>
+                      <input
+                        placeholder="운동명 입력"
+                        value={item.exerciseName}
+                        onChange={(e) => updateWorkoutItem(itemIndex, { exerciseName: e.target.value })}
+                      />
+
+                      <div className="mini-ex-list">
+                        {filteredExercises
+                          .filter((exercise) => !item.bodyPart || exercise.body_part === item.bodyPart)
+                          .slice(0, 8)
+                          .map((exercise) => (
+                            <button
+                              type="button"
+                              key={exercise.id}
+                              className="mini-ex-item"
+                              onClick={() => applyExercise(itemIndex, exercise)}
+                            >
+                              {exercise.name} · {exercise.brand_name}
+                            </button>
+                          ))}
+                      </div>
+
+                      <div className="set-card-wrap">
+                        {item.sets.map((setRow, setIndex) => (
+                          <div className="set-card" key={`${item.id}-set-${setIndex}`}>
+                            <div className="set-card-head">
+                              <strong>{setIndex + 1}세트</strong>
+                              {item.sets.length > 1 && (
+                                <button
+                                  type="button"
+                                  className="danger-btn"
+                                  onClick={() => removeSet(itemIndex, setIndex)}
+                                >
+                                  세트 삭제
+                                </button>
                               )}
                             </div>
-                          ))}
-                        </div>
-                      )}
+
+                            <div className="grid-2">
+                              <div>
+                                <label>무게(kg)</label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={setRow.kg}
+                                  onChange={(e) => updateSet(itemIndex, setIndex, 'kg', e.target.value)}
+                                />
+                              </div>
+                              <div>
+                                <label>횟수(reps)</label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={setRow.reps}
+                                  onChange={(e) => updateSet(itemIndex, setIndex, 'reps', e.target.value)}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="button-row" style={{ marginTop: 12 }}>
+                        <button type="button" className="secondary-btn" onClick={() => addSet(itemIndex)}>
+                          + 세트 추가
+                        </button>
+                      </div>
+
+                      <div className="grid-2">
+                        <textarea
+                          placeholder="잘한 점"
+                          value={item.goodPoint}
+                          onChange={(e) => updateWorkoutItem(itemIndex, { goodPoint: e.target.value })}
+                        />
+                        <textarea
+                          placeholder="보완할 점"
+                          value={item.improvePoint}
+                          onChange={(e) => updateWorkoutItem(itemIndex, { improvePoint: e.target.value })}
+                        />
+                      </div>
                     </div>
-                  )
-                })}
+                  ))}
+
+                  <div className="save-row">
+                    {editingWorkoutId ? (
+                      <>
+                        <button className="primary-btn" onClick={updateWorkoutRecord}>기록 수정 저장</button>
+                        <button
+                          className="secondary-btn"
+                          onClick={() => {
+                            setEditingWorkoutId(null)
+                            setWorkoutDraft({
+                              date: getKoreaDateString(),
+                              bodyParts: [],
+                              items: [createWorkoutItem()],
+                            })
+                          }}
+                        >
+                          수정 취소
+                        </button>
+                      </>
+                    ) : (
+                      <button className="primary-btn" onClick={saveWorkoutRecord}>기록 저장</button>
+                    )}
+                  </div>
+                </>
+              )}
+            </section>
+
+            <section className="card section-card">
+              <div className="section-head">
+                <div>
+                  <div className="section-label">저장된 운동 기록</div>
+                  <h2>간추려보기 / 상세히 보기</h2>
+                </div>
               </div>
-            )}
-          </section>
+
+              {!selectedMember ? (
+                <div className="muted">회원 탭에서 회원을 먼저 선택해 주세요.</div>
+              ) : workoutHistory.length === 0 ? (
+                <div className="muted">저장된 기록이 없습니다.</div>
+              ) : (
+                <div className="record-list">
+                  {workoutHistory.map((workout) => {
+                    const groupedItems = groupWorkoutItems(workout.workout_items || [])
+                    const isExpanded = expandedWorkoutIds.includes(workout.id)
+                    const exerciseCount = groupedItems.length
+                    const totalSets = groupedItems.reduce((sum, item) => sum + item.sets.length, 0)
+
+                    return (
+                      <div className="record-card" key={workout.id}>
+                        <div className="record-card-top">
+                          <div>
+                            <div className="record-date">{workout.workout_date}</div>
+                            <div className="record-meta">
+                              구분: {(workout.workout_type || 'pt') === 'self' ? '개인운동' : 'PT'} · 부위: {(workout.body_parts || []).join(', ') || '-'}
+                            </div>
+                          </div>
+                          <div className="button-row">
+                            <button
+                              className="secondary-btn"
+                              onClick={() => toggleWorkoutDetail(workout.id)}
+                            >
+                              {isExpanded ? '간추려보기' : '상세히 보기'}
+                            </button>
+                            <button className="secondary-btn" onClick={() => editWorkoutRecord(workout)}>
+                              수정
+                            </button>
+                            <button className="danger-btn" onClick={() => deleteWorkoutRecord(workout.id)}>
+                              삭제
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="record-summary-grid">
+                          <div className="record-summary-box">
+                            <div className="summary-label">운동 개수</div>
+                            <div className="summary-value">{exerciseCount}개</div>
+                          </div>
+                          <div className="record-summary-box">
+                            <div className="summary-label">총 세트</div>
+                            <div className="summary-value">{totalSets}세트</div>
+                          </div>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="record-detail-list">
+                            {groupedItems.map((item) => (
+                              <div key={item.id} className="record-detail-card">
+                                <div className="record-detail-title">{item.exerciseName}</div>
+
+                                <div className="tag-row" style={{ marginTop: 8 }}>
+                                  <span className="tag">{item.bodyPart}</span>
+                                  <span className="tag">{item.category}</span>
+                                  <span className="tag">{item.brand}</span>
+                                </div>
+
+                                <div className="history-sets" style={{ marginTop: 10 }}>
+                                  {item.sets.map((setRow) => (
+                                    <span key={setRow.id} className="tag">
+                                      {setRow.setNo}세트 · {setRow.kg}kg · {setRow.reps}회
+                                    </span>
+                                  ))}
+                                </div>
+
+                                {(item.goodPoint || item.improvePoint) && (
+                                  <div className="member-feedback-grid" style={{ marginTop: 12 }}>
+                                    <div className="feedback good">
+                                      <div className="memo-title">잘한 점</div>
+                                      <div>{item.goodPoint || '-'}</div>
+                                    </div>
+                                    <div className="feedback warn">
+                                      <div className="memo-title">보완할 점</div>
+                                      <div>{item.improvePoint || '-'}</div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </section>
+          </div>
         </div>
       )}
 
       {activeTab === '운동DB' && (
         <div className="tab-page">
-          {editBrandId && (
-            <section className="card">
+          <div className="admin-grid">
+            <section className="card section-card">
               <div className="section-head">
-                <h2>브랜드 수정</h2>
-                <button className="secondary-btn" onClick={closeBrandEdit}>닫기</button>
-              </div>
-              <input
-                placeholder="브랜드 이름"
-                value={editBrandForm.name}
-                onChange={(e) => setEditBrandForm({ name: e.target.value })}
-              />
-              <div className="button-row" style={{ marginTop: 12 }}>
-                <button className="primary-btn" onClick={updateBrand}>브랜드 저장</button>
-                <button className="secondary-btn" onClick={closeBrandEdit}>취소</button>
-              </div>
-            </section>
-          )}
-
-          {editExerciseId && (
-            <section className="card">
-              <div className="section-head">
-                <h2>운동 DB 수정</h2>
-                <button className="secondary-btn" onClick={closeExerciseEdit}>닫기</button>
+                <div>
+                  <div className="section-label">브랜드 관리</div>
+                  <h2>브랜드 추가 / 수정 / 삭제</h2>
+                </div>
               </div>
 
-              <input
-                placeholder="운동명"
-                value={editExerciseForm.name}
-                onChange={(e) => setEditExerciseForm({ ...editExerciseForm, name: e.target.value })}
-              />
+              {editBrandId && (
+                <div className="form-block" style={{ marginBottom: 16 }}>
+                  <input
+                    placeholder="브랜드 이름"
+                    value={editBrandForm.name}
+                    onChange={(e) => setEditBrandForm({ name: e.target.value })}
+                  />
+                  <div className="button-row">
+                    <button className="primary-btn" onClick={updateBrand}>브랜드 저장</button>
+                    <button className="secondary-btn" onClick={closeBrandEdit}>취소</button>
+                  </div>
+                </div>
+              )}
 
-              <div className="grid-3" style={{ marginTop: 12 }}>
-                <select
-                  value={editExerciseForm.bodyPart}
-                  onChange={(e) => setEditExerciseForm({ ...editExerciseForm, bodyPart: e.target.value })}
-                >
-                  {bodyPartOptions.map((o) => <option key={o}>{o}</option>)}
-                </select>
-                <select
-                  value={editExerciseForm.category}
-                  onChange={(e) => setEditExerciseForm({ ...editExerciseForm, category: e.target.value })}
-                >
-                  {categoryOptions.map((o) => <option key={o}>{o}</option>)}
-                </select>
-                <select
-                  value={editExerciseForm.brand}
-                  onChange={(e) => setEditExerciseForm({ ...editExerciseForm, brand: e.target.value })}
-                >
-                  {brandNames.map((o) => <option key={o}>{o}</option>)}
-                </select>
-              </div>
-
-              <div className="button-row" style={{ marginTop: 12 }}>
-                <button className="primary-btn" onClick={updateExercise}>운동 DB 저장</button>
-                <button className="secondary-btn" onClick={closeExerciseEdit}>취소</button>
-              </div>
-            </section>
-          )}
-
-          <div className="top-grid">
-            <section className="card">
-              <h2>브랜드 관리</h2>
               <div className="form-block">
                 <input
                   placeholder="브랜드 이름 추가"
@@ -1643,16 +1659,16 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                 <button className="secondary-btn" onClick={addBrand}>브랜드 추가</button>
               </div>
 
-              <div className="exercise-list" style={{ marginTop: 12 }}>
+              <div className="list-card-group">
                 {loadingBrands ? (
                   <div className="muted">브랜드 불러오는 중...</div>
                 ) : (
                   brands.map((brand) => (
-                    <div className="exercise-item" key={brand.id}>
-                      <div className="exercise-name">{brand.name}</div>
+                    <div className="list-card-row" key={brand.id}>
+                      <div className="list-card-title">{brand.name}</div>
                       <div className="button-row">
-                        <button className="secondary-btn" onClick={() => openBrandEdit(brand)}>브랜드 수정</button>
-                        <button className="danger-btn" onClick={() => deleteBrand(brand)}>브랜드 삭제</button>
+                        <button className="secondary-btn" onClick={() => openBrandEdit(brand)}>수정</button>
+                        <button className="danger-btn" onClick={() => deleteBrand(brand)}>삭제</button>
                       </div>
                     </div>
                   ))
@@ -1660,8 +1676,49 @@ export default function AdminDashboard({ user, profile, onLogout }) {
               </div>
             </section>
 
-            <section className="card">
-              <h2>운동 기구 / 운동 DB</h2>
+            <section className="card section-card">
+              <div className="section-head">
+                <div>
+                  <div className="section-label">운동 DB</div>
+                  <h2>운동 추가 / 수정 / 삭제</h2>
+                </div>
+              </div>
+
+              {editExerciseId && (
+                <div className="form-block" style={{ marginBottom: 16 }}>
+                  <input
+                    placeholder="운동명"
+                    value={editExerciseForm.name}
+                    onChange={(e) => setEditExerciseForm({ ...editExerciseForm, name: e.target.value })}
+                  />
+
+                  <div className="grid-3">
+                    <select
+                      value={editExerciseForm.bodyPart}
+                      onChange={(e) => setEditExerciseForm({ ...editExerciseForm, bodyPart: e.target.value })}
+                    >
+                      {bodyPartOptions.map((o) => <option key={o}>{o}</option>)}
+                    </select>
+                    <select
+                      value={editExerciseForm.category}
+                      onChange={(e) => setEditExerciseForm({ ...editExerciseForm, category: e.target.value })}
+                    >
+                      {categoryOptions.map((o) => <option key={o}>{o}</option>)}
+                    </select>
+                    <select
+                      value={editExerciseForm.brand}
+                      onChange={(e) => setEditExerciseForm({ ...editExerciseForm, brand: e.target.value })}
+                    >
+                      {brandNames.map((o) => <option key={o}>{o}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="button-row">
+                    <button className="primary-btn" onClick={updateExercise}>운동 저장</button>
+                    <button className="secondary-btn" onClick={closeExerciseEdit}>취소</button>
+                  </div>
+                </div>
+              )}
 
               <div className="form-block">
                 <input
@@ -1698,22 +1755,24 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                 onChange={(e) => setExerciseSearch(e.target.value)}
               />
 
-              <div className="exercise-list">
+              <div className="list-card-group">
                 {loadingExercises ? (
                   <div className="muted">운동DB 불러오는 중...</div>
                 ) : (
                   filteredExercises.map((exercise) => (
-                    <div className="exercise-item" key={exercise.id}>
-                      <div className="exercise-name">{exercise.name}</div>
-                      <div className="tag-row">
-                        <span className="tag">{exercise.body_part}</span>
-                        <span className="tag">{exercise.category}</span>
-                        <span className="tag">{exercise.brand_name}</span>
+                    <div className="list-card-row" key={exercise.id}>
+                      <div>
+                        <div className="list-card-title">{exercise.name}</div>
+                        <div className="tag-row" style={{ marginTop: 8 }}>
+                          <span className="tag">{exercise.body_part}</span>
+                          <span className="tag">{exercise.category}</span>
+                          <span className="tag">{exercise.brand_name}</span>
+                        </div>
                       </div>
 
-                      <div className="button-row" style={{ marginTop: 10 }}>
-                        <button className="secondary-btn" onClick={() => openExerciseEdit(exercise)}>운동 수정</button>
-                        <button className="danger-btn" onClick={() => deleteExercise(exercise.id)}>운동 삭제</button>
+                      <div className="button-row">
+                        <button className="secondary-btn" onClick={() => openExerciseEdit(exercise)}>수정</button>
+                        <button className="danger-btn" onClick={() => deleteExercise(exercise.id)}>삭제</button>
                       </div>
                     </div>
                   ))
@@ -1726,42 +1785,43 @@ export default function AdminDashboard({ user, profile, onLogout }) {
 
       {activeTab === '통계' && (
         <div className="tab-page">
-          <section className="card">
-            <h2>이번달 운동 현황</h2>
+          <section className="card section-card">
+            <div className="section-head">
+              <div>
+                <div className="section-label">이번달 운동 현황</div>
+                <h2>{selectedMember ? `${selectedMember.name}님 통계` : '회원 선택 필요'}</h2>
+              </div>
+            </div>
 
             {!selectedMember ? (
               <div className="muted">회원 탭에서 회원을 먼저 선택해 주세요.</div>
             ) : (
               <>
-                <div className="memo-box" style={{ marginTop: 0 }}>
-                  <div className="memo-title">대상 회원</div>
-                  <div>{selectedMember.name}</div>
-                </div>
-
-                <div className="grid-2 stat-grid" style={{ marginTop: 16 }}>
-                  <div className="soft-card green">
-                    <div className="muted">이번달 총 운동</div>
-                    <div className="stat-number">{currentMonthTotal}회</div>
+                <div className="summary-grid">
+                  <div className="summary-box">
+                    <div className="summary-label">이번달 총 운동</div>
+                    <div className="summary-value">{currentMonthTotal}회</div>
                   </div>
-                  <div className="soft-card">
-                    <div className="muted">이번달 PT</div>
-                    <div className="stat-number">{currentMonthPtCount}회</div>
+                  <div className="summary-box">
+                    <div className="summary-label">이번달 PT</div>
+                    <div className="summary-value">{currentMonthPtCount}회</div>
                   </div>
-                  <div className="soft-card">
-                    <div className="muted">이번달 개인운동</div>
-                    <div className="stat-number">{currentMonthSelfCount}회</div>
+                  <div className="summary-box">
+                    <div className="summary-label">이번달 개인운동</div>
+                    <div className="summary-value">{currentMonthSelfCount}회</div>
                   </div>
-                  <div className="soft-card">
-                    <div className="muted">남은 세션</div>
-                    <div className="stat-number">
-                      {Math.max(selectedMember.total_sessions - selectedMember.used_sessions, 0)}회
-                    </div>
+                  <div className="summary-box">
+                    <div className="summary-label">남은 세션</div>
+                    <div className="summary-value">{Math.max(selectedMember.total_sessions - selectedMember.used_sessions, 0)}회</div>
                   </div>
                 </div>
 
                 <div className="memo-box">
                   <div className="memo-title">이번달 요약</div>
-                  <div>이번달 총 {currentMonthTotal}번 운동했고, 그중 PT는 {currentMonthPtCount}번, 개인운동은 {currentMonthSelfCount}번입니다.</div>
+                  <div>
+                    이번달 총 {currentMonthTotal}번 운동했고,
+                    그중 PT는 {currentMonthPtCount}번, 개인운동은 {currentMonthSelfCount}번입니다.
+                  </div>
                 </div>
               </>
             )}
@@ -1771,9 +1831,12 @@ export default function AdminDashboard({ user, profile, onLogout }) {
 
       {activeTab === '사용방법' && (
         <div className="tab-page">
-          <section className="card">
+          <section className="card section-card">
             <div className="section-head">
-              <h2>사용방법 메뉴얼</h2>
+              <div>
+                <div className="section-label">사용방법 메뉴얼</div>
+                <h2>{manualTitle || '더피트니스 화정점 사용방법'}</h2>
+              </div>
               {loadingManual && <div className="muted">불러오는 중...</div>}
             </div>
 
