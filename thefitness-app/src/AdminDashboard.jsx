@@ -140,9 +140,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
   })
 
   const [editBrandId, setEditBrandId] = useState('')
-  const [editBrandForm, setEditBrandForm] = useState({
-    name: '',
-  })
+  const [editBrandForm, setEditBrandForm] = useState({ name: '' })
 
   const [editExerciseId, setEditExerciseId] = useState('')
   const [editExerciseForm, setEditExerciseForm] = useState({
@@ -169,7 +167,6 @@ export default function AdminDashboard({ user, profile, onLogout }) {
 
   const loadMembers = async () => {
     setLoadingMembers(true)
-
     const { data, error } = await supabase
       .from('members')
       .select('*')
@@ -185,10 +182,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     const rows = data || []
     setMembers(rows)
 
-    if (!selectedMemberId && rows.length > 0) {
-      setSelectedMemberId(rows[0].id)
-    }
-
+    if (!selectedMemberId && rows.length > 0) setSelectedMemberId(rows[0].id)
     if (selectedMemberId && !rows.find((m) => m.id === selectedMemberId)) {
       setSelectedMemberId(rows[0]?.id || '')
     }
@@ -198,7 +192,6 @@ export default function AdminDashboard({ user, profile, onLogout }) {
 
   const loadBrands = async () => {
     setLoadingBrands(true)
-
     const { data, error } = await supabase
       .from('brands')
       .select('*')
@@ -217,7 +210,6 @@ export default function AdminDashboard({ user, profile, onLogout }) {
 
   const loadExercises = async () => {
     setLoadingExercises(true)
-
     const { data, error } = await supabase
       .from('exercises')
       .select('*')
@@ -236,7 +228,6 @@ export default function AdminDashboard({ user, profile, onLogout }) {
 
   const loadManual = async () => {
     setLoadingManual(true)
-
     const { data, error } = await supabase
       .from('app_manuals')
       .select('*')
@@ -284,7 +275,6 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     }
 
     setLoadingRoutines(true)
-
     const { data, error } = await supabase
       .from('member_routines')
       .select('*')
@@ -358,14 +348,11 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     return members.find((m) => m.id === selectedMemberId) || null
   }, [members, selectedMemberId])
 
-  const brandNames = useMemo(() => {
-    return brands.map((b) => b.name)
-  }, [brands])
+  const brandNames = useMemo(() => brands.map((b) => b.name), [brands])
 
   const filteredExercises = useMemo(() => {
     const q = exerciseSearch.trim().toLowerCase()
     if (!q) return exercises
-
     return exercises.filter((e) =>
       [e.name, e.body_part, e.category, e.brand_name].join(' ').toLowerCase().includes(q)
     )
@@ -452,8 +439,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
   }
 
   const updateMember = async () => {
-    if (!editMemberId) return
-    if (!editMemberForm.name.trim()) {
+    if (!editMemberId || !editMemberForm.name.trim()) {
       alert('회원 이름을 입력해 주세요.')
       return
     }
@@ -482,8 +468,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
   }
 
   const deleteMember = async (memberId) => {
-    const ok = window.confirm('정말 이 회원을 삭제할까요?')
-    if (!ok) return
+    if (!window.confirm('정말 이 회원을 삭제할까요?')) return
 
     const { error } = await supabase
       .from('members')
@@ -496,10 +481,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
       return
     }
 
-    if (selectedMemberId === memberId) {
-      setSelectedMemberId('')
-    }
-
+    if (selectedMemberId === memberId) setSelectedMemberId('')
     await loadMembers()
   }
 
@@ -508,10 +490,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     if (!value) return
 
     const { error } = await supabase.from('brands').insert([
-      {
-        name: value,
-        sort_order: brands.length + 1,
-      },
+      { name: value, sort_order: brands.length + 1 },
     ])
 
     if (error) {
@@ -577,8 +556,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
       return
     }
 
-    const ok = window.confirm(`"${brand.name}" 브랜드를 삭제할까요?\n연결된 운동은 "기본" 브랜드로 바뀝니다.`)
-    if (!ok) return
+    if (!window.confirm(`"${brand.name}" 브랜드를 삭제할까요?\n연결된 운동은 "기본" 브랜드로 바뀝니다.`)) return
 
     const { error: exError } = await supabase
       .from('exercises')
@@ -653,8 +631,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
   }
 
   const updateExercise = async () => {
-    if (!editExerciseId) return
-    if (!editExerciseForm.name.trim()) {
+    if (!editExerciseId || !editExerciseForm.name.trim()) {
       alert('운동명을 입력해 주세요.')
       return
     }
@@ -679,8 +656,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
   }
 
   const deleteExercise = async (exerciseId) => {
-    const ok = window.confirm('이 운동을 삭제할까요?')
-    if (!ok) return
+    if (!window.confirm('이 운동을 삭제할까요?')) return
 
     const { error } = await supabase.from('exercises').delete().eq('id', exerciseId)
 
@@ -899,8 +875,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
   }
 
   const deleteWorkoutRecord = async (workoutId) => {
-    const ok = window.confirm('이 운동 기록을 삭제할까요?')
-    if (!ok) return
+    if (!window.confirm('이 운동 기록을 삭제할까요?')) return
 
     const { error } = await supabase.from('workouts').delete().eq('id', workoutId)
 
@@ -1038,65 +1013,6 @@ export default function AdminDashboard({ user, profile, onLogout }) {
 
       {activeTab === '회원' && (
         <div className="tab-page">
-          {selectedMember && (
-            <section className="card section-card">
-              <div className="section-head">
-                <div>
-                  <div className="section-label">선택 회원</div>
-                  <h2>{selectedMember.name}</h2>
-                </div>
-                <div className="button-row">
-                  <button className="secondary-btn" onClick={() => openMemberEdit(selectedMember)}>회원 수정</button>
-                  <button className="danger-btn" onClick={() => deleteMember(selectedMember.id)}>회원 삭제</button>
-                </div>
-              </div>
-
-              <div className="summary-grid">
-                <div className="summary-box">
-                  <div className="summary-label">목표</div>
-                  <div className="summary-value">{selectedMember.goal || '미입력'}</div>
-                </div>
-                <div className="summary-box">
-                  <div className="summary-label">세션</div>
-                  <div className="summary-value">{selectedMember.used_sessions} / {selectedMember.total_sessions}회</div>
-                </div>
-                <div className="summary-box">
-                  <div className="summary-label">기간</div>
-                  <div className="summary-value">{selectedMember.start_date || '-'} ~ {selectedMember.end_date || '-'}</div>
-                </div>
-                <div className="summary-box">
-                  <div className="summary-label">남은 세션</div>
-                  <div className="summary-value">{Math.max(selectedMember.total_sessions - selectedMember.used_sessions, 0)}회</div>
-                </div>
-              </div>
-
-              <div className="progress-wrap">
-                <div className="progress-bar">
-                  <div className="progress-fill" style={{ width: `${progress}%` }} />
-                </div>
-              </div>
-
-              <div className="memo-box">
-                <div className="memo-title">메모</div>
-                <div>{selectedMember.memo || '메모 없음'}</div>
-              </div>
-
-              <div className="member-link-box">
-                <div className="memo-title">회원 링크 / 코드</div>
-                <div className="link-line">링크: {`${window.location.origin}?member=${selectedMember.id}`}</div>
-                <div className="link-line">코드: <strong>{selectedMember.access_code || '-'}</strong></div>
-                <div className="button-row">
-                  <button className="secondary-btn" onClick={() => copyText(`${window.location.origin}?member=${selectedMember.id}`)}>
-                    링크 복사
-                  </button>
-                  <button className="secondary-btn" onClick={() => copyText(selectedMember.access_code || '')}>
-                    코드 복사
-                  </button>
-                </div>
-              </div>
-            </section>
-          )}
-
           <div className="admin-grid">
             <section className="card section-card">
               <div className="section-head">
@@ -1262,45 +1178,101 @@ export default function AdminDashboard({ user, profile, onLogout }) {
           </div>
 
           {selectedMember && (
-            <section className="card section-card">
-              <div className="section-head">
-                <div>
-                  <div className="section-label">회원 루틴 관리</div>
-                  <h2>{selectedMember.name}님 루틴</h2>
+            <>
+              <section className="card section-card">
+                <div className="section-head">
+                  <div>
+                    <div className="section-label">선택 회원 정보</div>
+                    <h2>{selectedMember.name}</h2>
+                  </div>
+                  <div className="pill">남은 세션 {Math.max(selectedMember.total_sessions - selectedMember.used_sessions, 0)}회</div>
                 </div>
-              </div>
 
-              {loadingRoutines ? (
-                <div className="muted">루틴 불러오는 중...</div>
-              ) : (
-                <div className="routine-admin-list">
-                  {routineRows.map((row) => (
-                    <div className="routine-admin-card" key={row.dayKey}>
-                      <div className="memo-title">{row.dayLabel}</div>
-                      <input
-                        placeholder="루틴 제목 예: 상체 루틴"
-                        value={row.title}
-                        onChange={(e) => updateRoutineRow(row.dayKey, 'title', e.target.value)}
-                      />
-                      <textarea
-                        placeholder="운동 목록을 쉼표(,)로 구분해서 입력&#10;예: 벤치프레스, 랫풀다운, 숄더프레스"
-                        value={row.exercisesText}
-                        onChange={(e) => updateRoutineRow(row.dayKey, 'exercisesText', e.target.value)}
-                      />
-                    </div>
-                  ))}
+                <div className="summary-grid">
+                  <div className="summary-box">
+                    <div className="summary-label">목표</div>
+                    <div className="summary-value">{selectedMember.goal || '미입력'}</div>
+                  </div>
+                  <div className="summary-box">
+                    <div className="summary-label">세션</div>
+                    <div className="summary-value">{selectedMember.used_sessions} / {selectedMember.total_sessions}회</div>
+                  </div>
+                  <div className="summary-box">
+                    <div className="summary-label">시작일</div>
+                    <div className="summary-value">{selectedMember.start_date || '-'}</div>
+                  </div>
+                  <div className="summary-box">
+                    <div className="summary-label">종료일</div>
+                    <div className="summary-value">{selectedMember.end_date || '-'}</div>
+                  </div>
                 </div>
-              )}
 
-              <div className="button-row" style={{ marginTop: 16 }}>
-                <button className="primary-btn" onClick={saveMemberRoutines} disabled={savingRoutines}>
-                  {savingRoutines ? '루틴 저장 중...' : '회원 루틴 저장'}
-                </button>
-                <button className="secondary-btn" onClick={resetMemberRoutines}>
-                  입력 초기화
-                </button>
-              </div>
-            </section>
+                <div className="progress-wrap">
+                  <div className="progress-bar">
+                    <div className="progress-fill" style={{ width: `${progress}%` }} />
+                  </div>
+                </div>
+
+                <div className="memo-box">
+                  <div className="memo-title">특이사항 / 메모</div>
+                  <div>{selectedMember.memo || '메모 없음'}</div>
+                </div>
+
+                <div className="member-link-box">
+                  <div className="memo-title">회원 링크 / 코드</div>
+                  <div className="link-line">링크: {`${window.location.origin}?member=${selectedMember.id}`}</div>
+                  <div className="link-line">코드: <strong>{selectedMember.access_code || '-'}</strong></div>
+                  <div className="button-row">
+                    <button className="secondary-btn" onClick={() => copyText(`${window.location.origin}?member=${selectedMember.id}`)}>
+                      링크 복사
+                    </button>
+                    <button className="secondary-btn" onClick={() => copyText(selectedMember.access_code || '')}>
+                      코드 복사
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              <section className="card section-card">
+                <div className="section-head">
+                  <div>
+                    <div className="section-label">회원 루틴 관리</div>
+                    <h2>{selectedMember.name}님 루틴</h2>
+                  </div>
+                </div>
+
+                {loadingRoutines ? (
+                  <div className="muted">루틴 불러오는 중...</div>
+                ) : (
+                  <div className="routine-admin-list">
+                    {routineRows.map((row) => (
+                      <div className="routine-admin-card" key={row.dayKey}>
+                        <div className="memo-title">{row.dayLabel}</div>
+                        <input
+                          placeholder="루틴 제목 예: 상체 루틴"
+                          value={row.title}
+                          onChange={(e) => updateRoutineRow(row.dayKey, 'title', e.target.value)}
+                        />
+                        <textarea
+                          placeholder="운동 목록을 쉼표(,)로 구분해서 입력&#10;예: 벤치프레스, 랫풀다운, 숄더프레스"
+                          value={row.exercisesText}
+                          onChange={(e) => updateRoutineRow(row.dayKey, 'exercisesText', e.target.value)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="button-row" style={{ marginTop: 16 }}>
+                  <button className="primary-btn" onClick={saveMemberRoutines} disabled={savingRoutines}>
+                    {savingRoutines ? '루틴 저장 중...' : '회원 루틴 저장'}
+                  </button>
+                  <button className="secondary-btn" onClick={resetMemberRoutines}>
+                    입력 초기화
+                  </button>
+                </div>
+              </section>
+            </>
           )}
         </div>
       )}
@@ -1311,7 +1283,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
             <section className="card section-card">
               <div className="section-head">
                 <div>
-                  <div className="section-label">선택 회원</div>
+                  <div className="section-label">대상 회원</div>
                   <h2>{selectedMember.name}</h2>
                 </div>
                 <div className="pill">남은 세션 {Math.max(selectedMember.total_sessions - selectedMember.used_sessions, 0)}회</div>
