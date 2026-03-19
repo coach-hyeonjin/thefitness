@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './supabase'
 import './style.css'
 
-const memberTabs = ['내기록', '개인운동입력', '루틴', '사용방법']
+const memberTabs = ['내정보', '저장된 운동기록', '개인운동입력', '루틴', '사용방법']
 
 function groupWorkoutItems(items = []) {
   const map = new Map()
@@ -63,7 +63,7 @@ function summarizeWorkout(workout) {
 }
 
 export default function MemberDashboard({ member, accessCode }) {
-  const [activeTab, setActiveTab] = useState('내기록')
+  const [activeTab, setActiveTab] = useState('내정보')
   const [workoutHistory, setWorkoutHistory] = useState([])
   const [expandedWorkoutIds, setExpandedWorkoutIds] = useState([])
   const [routineRows, setRoutineRows] = useState([])
@@ -219,7 +219,7 @@ export default function MemberDashboard({ member, accessCode }) {
     })
 
     await loadWorkoutHistory()
-    setActiveTab('내기록')
+    setActiveTab('저장된 운동기록')
     setSavingSelfWorkout(false)
   }
 
@@ -238,65 +238,6 @@ export default function MemberDashboard({ member, accessCode }) {
         <div className="pill">입장코드: {accessCode}</div>
       </div>
 
-      <section className="card section-card">
-        <div className="section-head">
-          <div>
-            <div className="section-label">회원 정보</div>
-            <h2>{member.name}</h2>
-          </div>
-          <div className="pill">남은 세션 {remainingSessions}회</div>
-        </div>
-
-        <div className="summary-grid">
-          <div className="summary-box">
-            <div className="summary-label">목표</div>
-            <div className="summary-value">{member.goal || '미입력'}</div>
-          </div>
-          <div className="summary-box">
-            <div className="summary-label">세션</div>
-            <div className="summary-value">{member.used_sessions} / {member.total_sessions}회</div>
-          </div>
-          <div className="summary-box">
-            <div className="summary-label">이번달 PT</div>
-            <div className="summary-value">{monthlyStats.pt}회</div>
-          </div>
-          <div className="summary-box">
-            <div className="summary-label">이번달 개인운동</div>
-            <div className="summary-value">{monthlyStats.self}회</div>
-          </div>
-        </div>
-
-        <div className="progress-wrap">
-          <div className="progress-bar">
-            <div className="progress-fill" style={{ width: `${progress}%` }} />
-          </div>
-        </div>
-
-        <div className="summary-grid">
-          <div className="summary-box">
-            <div className="summary-label">시작일</div>
-            <div className="summary-value">{member.start_date || '-'}</div>
-          </div>
-          <div className="summary-box">
-            <div className="summary-label">종료일</div>
-            <div className="summary-value">{member.end_date || '-'}</div>
-          </div>
-          <div className="summary-box">
-            <div className="summary-label">이번달 총 운동</div>
-            <div className="summary-value">{monthlyStats.total}회</div>
-          </div>
-          <div className="summary-box">
-            <div className="summary-label">남은 세션</div>
-            <div className="summary-value">{remainingSessions}회</div>
-          </div>
-        </div>
-
-        <div className="memo-box">
-          <div className="memo-title">메모</div>
-          <div>{member.memo || '등록된 메모가 없습니다.'}</div>
-        </div>
-      </section>
-
       <div className="tab-bar">
         {memberTabs.map((tab) => (
           <button
@@ -309,12 +250,75 @@ export default function MemberDashboard({ member, accessCode }) {
         ))}
       </div>
 
-      {activeTab === '내기록' && (
+      {activeTab === '내정보' && (
         <div className="tab-page">
           <section className="card section-card">
             <div className="section-head">
               <div>
-                <div className="section-label">내 운동 기록</div>
+                <div className="section-label">회원 정보</div>
+                <h2>{member.name}</h2>
+              </div>
+              <div className="pill">남은 세션 {remainingSessions}회</div>
+            </div>
+
+            <div className="summary-grid">
+              <div className="summary-box">
+                <div className="summary-label">목표</div>
+                <div className="summary-value">{member.goal || '미입력'}</div>
+              </div>
+              <div className="summary-box">
+                <div className="summary-label">세션</div>
+                <div className="summary-value">{member.used_sessions} / {member.total_sessions}회</div>
+              </div>
+              <div className="summary-box">
+                <div className="summary-label">이번달 PT</div>
+                <div className="summary-value">{monthlyStats.pt}회</div>
+              </div>
+              <div className="summary-box">
+                <div className="summary-label">이번달 개인운동</div>
+                <div className="summary-value">{monthlyStats.self}회</div>
+              </div>
+            </div>
+
+            <div className="progress-wrap">
+              <div className="progress-bar">
+                <div className="progress-fill" style={{ width: `${progress}%` }} />
+              </div>
+            </div>
+
+            <div className="summary-grid">
+              <div className="summary-box">
+                <div className="summary-label">시작일</div>
+                <div className="summary-value">{member.start_date || '-'}</div>
+              </div>
+              <div className="summary-box">
+                <div className="summary-label">종료일</div>
+                <div className="summary-value">{member.end_date || '-'}</div>
+              </div>
+              <div className="summary-box">
+                <div className="summary-label">이번달 총 운동</div>
+                <div className="summary-value">{monthlyStats.total}회</div>
+              </div>
+              <div className="summary-box">
+                <div className="summary-label">남은 세션</div>
+                <div className="summary-value">{remainingSessions}회</div>
+              </div>
+            </div>
+
+            <div className="memo-box">
+              <div className="memo-title">메모</div>
+              <div>{member.memo || '등록된 메모가 없습니다.'}</div>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {activeTab === '저장된 운동기록' && (
+        <div className="tab-page">
+          <section className="card section-card">
+            <div className="section-head">
+              <div>
+                <div className="section-label">저장된 운동 기록</div>
                 <h2>간추려보기 / 상세히 보기</h2>
               </div>
               <div className="muted">
