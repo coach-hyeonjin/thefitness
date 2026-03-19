@@ -238,14 +238,31 @@ export default function MemberDashboard({ member, accessCode }) {
         <div className="pill">입장코드: {accessCode}</div>
       </div>
 
-      <section className="card">
-        <div className="member-header">
+      <section className="card section-card">
+        <div className="section-head">
           <div>
-            <div className="title-lg">{member.name}</div>
-            <div className="pill">목표: {member.goal || '미입력'}</div>
+            <div className="section-label">회원 정보</div>
+            <h2>{member.name}</h2>
           </div>
-          <div className="session-big">
-            {member.used_sessions} / {member.total_sessions}회
+          <div className="pill">남은 세션 {remainingSessions}회</div>
+        </div>
+
+        <div className="summary-grid">
+          <div className="summary-box">
+            <div className="summary-label">목표</div>
+            <div className="summary-value">{member.goal || '미입력'}</div>
+          </div>
+          <div className="summary-box">
+            <div className="summary-label">세션</div>
+            <div className="summary-value">{member.used_sessions} / {member.total_sessions}회</div>
+          </div>
+          <div className="summary-box">
+            <div className="summary-label">이번달 PT</div>
+            <div className="summary-value">{monthlyStats.pt}회</div>
+          </div>
+          <div className="summary-box">
+            <div className="summary-label">이번달 개인운동</div>
+            <div className="summary-value">{monthlyStats.self}회</div>
           </div>
         </div>
 
@@ -253,27 +270,24 @@ export default function MemberDashboard({ member, accessCode }) {
           <div className="progress-bar">
             <div className="progress-fill" style={{ width: `${progress}%` }} />
           </div>
-          <div className="muted">남은 세션: {remainingSessions}회</div>
         </div>
 
-        <div className="grid-2 stat-grid">
-          <div className="soft-card green">
-            <div className="muted">이번달 총 운동</div>
-            <div className="stat-number small">{monthlyStats.total}회</div>
+        <div className="summary-grid">
+          <div className="summary-box">
+            <div className="summary-label">시작일</div>
+            <div className="summary-value">{member.start_date || '-'}</div>
           </div>
-          <div className="soft-card">
-            <div className="muted">이번달 PT</div>
-            <div className="stat-number small">{monthlyStats.pt}회</div>
+          <div className="summary-box">
+            <div className="summary-label">종료일</div>
+            <div className="summary-value">{member.end_date || '-'}</div>
           </div>
-          <div className="soft-card">
-            <div className="muted">이번달 개인운동</div>
-            <div className="stat-number small">{monthlyStats.self}회</div>
+          <div className="summary-box">
+            <div className="summary-label">이번달 총 운동</div>
+            <div className="summary-value">{monthlyStats.total}회</div>
           </div>
-          <div className="soft-card">
-            <div className="muted">운동 기간</div>
-            <div className="stat-number small">
-              {member.start_date || '-'} ~ {member.end_date || '-'}
-            </div>
+          <div className="summary-box">
+            <div className="summary-label">남은 세션</div>
+            <div className="summary-value">{remainingSessions}회</div>
           </div>
         </div>
 
@@ -297,9 +311,12 @@ export default function MemberDashboard({ member, accessCode }) {
 
       {activeTab === '내기록' && (
         <div className="tab-page">
-          <section className="card">
+          <section className="card section-card">
             <div className="section-head">
-              <h2>내 운동 기록</h2>
+              <div>
+                <div className="section-label">내 운동 기록</div>
+                <h2>간추려보기 / 상세히 보기</h2>
+              </div>
               <div className="muted">
                 PT {ptHistory.length}건 / 개인운동 {selfHistory.length}건
               </div>
@@ -310,24 +327,18 @@ export default function MemberDashboard({ member, accessCode }) {
             ) : workoutHistory.length === 0 ? (
               <div className="muted">아직 저장된 운동 기록이 없습니다.</div>
             ) : (
-              <div className="history-list">
+              <div className="record-list">
                 {workoutHistory.map((workout) => {
                   const { exerciseCount, totalSets, items } = summarizeWorkout(workout)
                   const isExpanded = expandedWorkoutIds.includes(workout.id)
 
                   return (
-                    <div className="history-card" key={workout.id}>
-                      <div className="history-head">
+                    <div className="record-card" key={workout.id}>
+                      <div className="record-card-top">
                         <div>
-                          <strong>{workout.workout_date}</strong>
-                          <div className="muted">
-                            구분: {(workout.workout_type || 'pt') === 'self' ? '개인운동' : 'PT'}
-                          </div>
-                          <div className="muted">
-                            부위: {(workout.body_parts || []).join(', ') || '-'}
-                          </div>
-                          <div className="muted" style={{ marginTop: 6 }}>
-                            요약: 운동 {exerciseCount}개 / 총 {totalSets}세트
+                          <div className="record-date">{workout.workout_date}</div>
+                          <div className="record-meta">
+                            구분: {(workout.workout_type || 'pt') === 'self' ? '개인운동' : 'PT'} · 부위: {(workout.body_parts || []).join(', ') || '-'}
                           </div>
                         </div>
 
@@ -336,19 +347,30 @@ export default function MemberDashboard({ member, accessCode }) {
                             className="secondary-btn"
                             onClick={() => toggleWorkout(workout.id)}
                           >
-                            {isExpanded ? '상세 닫기' : '상세 보기'}
+                            {isExpanded ? '간추려보기' : '상세히 보기'}
                           </button>
                         </div>
                       </div>
 
+                      <div className="record-summary-grid">
+                        <div className="record-summary-box">
+                          <div className="summary-label">운동 개수</div>
+                          <div className="summary-value">{exerciseCount}개</div>
+                        </div>
+                        <div className="record-summary-box">
+                          <div className="summary-label">총 세트</div>
+                          <div className="summary-value">{totalSets}세트</div>
+                        </div>
+                      </div>
+
                       {isExpanded && (
-                        <div className="history-list" style={{ marginTop: 12 }}>
+                        <div className="record-detail-list">
                           {items.length === 0 ? (
                             <div className="muted">상세 운동 항목이 없습니다.</div>
                           ) : (
                             items.map((item) => (
-                              <div key={item.id} className="history-item">
-                                <div><strong>{item.exerciseName}</strong></div>
+                              <div key={item.id} className="record-detail-card">
+                                <div className="record-detail-title">{item.exerciseName}</div>
 
                                 <div className="tag-row" style={{ marginTop: 8 }}>
                                   <span className="tag">{item.bodyPart || '-'}</span>
@@ -392,11 +414,13 @@ export default function MemberDashboard({ member, accessCode }) {
 
       {activeTab === '개인운동입력' && (
         <div className="tab-page">
-          <section className="card">
-            <h2>개인운동 입력</h2>
-            <p className="muted">
-              회원님이 직접 개인운동 여부를 체크하는 용도입니다.
-            </p>
+          <section className="card section-card">
+            <div className="section-head">
+              <div>
+                <div className="section-label">개인운동 입력</div>
+                <h2>직접 기록하기</h2>
+              </div>
+            </div>
 
             <div className="form-block">
               <input
@@ -444,7 +468,7 @@ export default function MemberDashboard({ member, accessCode }) {
             <div className="memo-box" style={{ marginTop: 16 }}>
               <div className="memo-title">안내</div>
               <div>
-                개인운동 입력은 횟수 체크용입니다.  
+                개인운동 입력은 횟수 체크용입니다.
                 PT 세션 차감은 관리자 기록 작성 기준으로 반영됩니다.
               </div>
             </div>
@@ -454,8 +478,13 @@ export default function MemberDashboard({ member, accessCode }) {
 
       {activeTab === '루틴' && (
         <div className="tab-page">
-          <section className="card">
-            <h2>내 루틴</h2>
+          <section className="card section-card">
+            <div className="section-head">
+              <div>
+                <div className="section-label">내 루틴</div>
+                <h2>요일별 운동 루틴</h2>
+              </div>
+            </div>
 
             {loadingRoutine ? (
               <div className="muted">루틴 불러오는 중...</div>
@@ -464,7 +493,7 @@ export default function MemberDashboard({ member, accessCode }) {
             ) : (
               <div className="routine-list">
                 {routineRows.map((row) => (
-                  <div className="routine-card" key={row.id}>
+                  <div className="routine-card modern-card" key={row.id}>
                     <div className="routine-day">{row.day_label}</div>
                     <div className="routine-title">{row.title || '루틴 제목 없음'}</div>
 
@@ -487,9 +516,12 @@ export default function MemberDashboard({ member, accessCode }) {
 
       {activeTab === '사용방법' && (
         <div className="tab-page">
-          <section className="card">
+          <section className="card section-card">
             <div className="section-head">
-              <h2>{manual.title || '더피트니스 화정점 사용방법'}</h2>
+              <div>
+                <div className="section-label">사용방법</div>
+                <h2>{manual.title || '더피트니스 화정점 사용방법'}</h2>
+              </div>
               {loadingManual && <div className="muted">불러오는 중...</div>}
             </div>
 
