@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { supabase } from './supabase'
-import AdminDashboard from './AdminDashboard'
+import MainDashboard from './MainDashboard'
 import MemberDashboard from './MemberDashboard'
 import './style.css'
 import logo from './assets/logo.png'
@@ -44,6 +44,7 @@ function AdminLogin({ onAdminLogin }) {
 
       if (profileError) {
         setMessage(`프로필 조회 오류: ${profileError.message}`)
+        await supabase.auth.signOut()
         return
       }
 
@@ -224,7 +225,7 @@ export default function App() {
 
   if (adminUser && adminProfile) {
     return (
-      <AdminDashboard
+      <MainDashboard
         user={adminUser}
         profile={adminProfile}
         onLogout={handleLogout}
