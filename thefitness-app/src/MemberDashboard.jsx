@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './supabase'
 import './style.css'
 
-const memberTabs = ['내정보', '저장된 운동기록', '개인운동입력', '루틴', '사용방법']
+const memberTabs = ['내정보', '저장된 운동기록', '개인운동입력', '식단', '루틴', '사용방법']
 const bodyPartOptions = ['가슴', '어깨', '팔', '등', '하체', '스트레칭&재활', '유산소']
 const equipmentTypeOptions = [
   '플레이트머신',
@@ -14,6 +14,7 @@ const equipmentTypeOptions = [
   '소도구',
   '스트레칭&재활',
 ]
+const mealTypeOptions = ['아침', '점심', '저녁', '간식']
 
 function groupWorkoutItems(items = []) {
   const map = new Map()
@@ -93,6 +94,21 @@ function normalizeSetNumbers(sets = []) {
   }))
 }
 
+function createDietForm() {
+  return {
+    date: getTodayKST(),
+    meal_type: '아침',
+    food_name: '',
+    amount: '',
+    carbs: '',
+    protein: '',
+    fat: '',
+    meal_time: '',
+    hunger_level: 5,
+    memo: '',
+  }
+}
+
 export default function MemberDashboard({ member, accessCode }) {
   const [activeTab, setActiveTab] = useState('내정보')
   const [workoutHistory, setWorkoutHistory] = useState([])
@@ -103,17 +119,26 @@ export default function MemberDashboard({ member, accessCode }) {
     content: '',
   })
   const [exercises, setExercises] = useState([])
+  const [dietLogs, setDietLogs] = useState([])
+
   const [loadingHistory, setLoadingHistory] = useState(true)
   const [loadingRoutine, setLoadingRoutine] = useState(true)
   const [loadingManual, setLoadingManual] = useState(true)
   const [loadingExercises, setLoadingExercises] = useState(true)
+  const [loadingDietLogs, setLoadingDietLogs] = useState(true)
+
   const [savingSelfWorkout, setSavingSelfWorkout] = useState(false)
+  const [savingDiet, setSavingDiet] = useState(false)
+
+  const [dietMonthFilter, setDietMonthFilter] = useState(getTodayKST().slice(0, 7))
 
   const [selfWorkoutForm, setSelfWorkoutForm] = useState({
     workout_date: getTodayKST(),
     bodyParts: [],
     items: [createSelfWorkoutItem('기본')],
   })
+
+  const [dietForm, setDietForm] = useState(createDietForm())
 
   const remainingSessions = Math.max(
     Number(member.total_sessions || 0) - Number(member.used_sessions || 0),
@@ -212,14 +237,52 @@ export default function MemberDashboard({ member, accessCode }) {
     setLoadingExercises(false)
   }
 
+  const loadDietLogs = async (monthFilter = dietMonthFilter) => {
+    setLoadingDietLogs(true)
+
+    let query = supabase
+      .from('diet_logs')
+      .select('*')
+      .eq('member_id', member.id)
+      .order('date', { ascending: false })
+      .order('meal_time', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false })
+
+    if (monthFilter) {
+      const start = `${monthFilter}-01`
+      const endDate = new Date(`${monthFilter}-01T00:00:00`)
+      endDate.setMonth(endDate.getMonth() + 1)
+      const end = endDate.toISOString().slice(0, 10)
+      query = query.gte('date', start).lt('date', end)
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      alert(`식단 기록 불러오기 오류: ${error.message}`)
+      setLoadingDietLogs(false)
+      return
+    }
+
+    setDietLogs(data || [])
+    setLoadingDietLogs(false)
+  }
+
   useEffect(() => {
     loadWorkoutHistory()
     loadRoutines()
     loadManual()
     loadExercises()
+    loadDietLogs()
     setExpandedWorkoutIds([])
     setActiveTab('내정보')
   }, [member.id])
+
+  useEffect(() => {
+    if (activeTab === '식단') {
+      loadDietLogs(dietMonthFilter)
+    }
+  }, [dietMonthFilter])
 
   useEffect(() => {
     const defaultBrand = brandNames[0] || '기본'
@@ -247,6 +310,24 @@ export default function MemberDashboard({ member, accessCode }) {
       self: currentMonthRows.filter((row) => (row.workout_type || 'pt') === 'self').length,
     }
   }, [workoutHistory])
+
+  const dietSummary = useMemo(() => {
+    const totalMeals = dietLogs.length
+    const avgCarbs =
+      totalMeals > 0
+        ? Math.round(dietLogs.reduce((sum, row) => sum + (Number(row.carbs) || 0), 0) / totalMeals)
+        : 0
+    const avgProtein =
+      totalMeals > 0
+        ? Math.round(dietLogs.reduce((sum, row) => sum + (Number(row.protein) || 0), 0) / totalMeals)
+        : 0
+    const avgFat =
+      totalMeals > 0
+        ? Math.round(dietLogs.reduce((sum, row) => sum + (Number(row.fat) || 0), 0) / totalMeals)
+        : 0
+
+    return { totalMeals, avgCarbs, avgProtein, avgFat }
+  }, [dietLogs])
 
   const toggleWorkout = (workoutId) => {
     setExpandedWorkoutIds((prev) =>
@@ -416,6 +497,48 @@ export default function MemberDashboard({ member, accessCode }) {
     await loadWorkoutHistory()
     setActiveTab('저장된 운동기록')
     setSavingSelfWorkout(false)
+  }
+
+  const saveDietLog = async () => {
+    if (!dietForm.date) {
+      alert('날짜를 입력해 주세요.')
+      return
+    }
+
+    if (!dietForm.food_name.trim()) {
+      alert('음식명을 입력해 주세요.')
+      return
+    }
+
+    setSavingDiet(true)
+
+    const { error } = await supabase.from('diet_logs').insert([
+      {
+        member_id: member.id,
+        date: dietForm.date,
+        meal_type: dietForm.meal_type,
+        food_name: dietForm.food_name.trim(),
+        amount: dietForm.amount.trim(),
+        carbs: dietForm.carbs === '' ? null : Number(dietForm.carbs) || 0,
+        protein: dietForm.protein === '' ? null : Number(dietForm.protein) || 0,
+        fat: dietForm.fat === '' ? null : Number(dietForm.fat) || 0,
+        meal_time: dietForm.meal_time,
+        hunger_level: dietForm.hunger_level === '' ? null : Number(dietForm.hunger_level) || 0,
+        memo: dietForm.memo,
+      },
+    ])
+
+    if (error) {
+      alert(`식단 저장 오류: ${error.message}`)
+      setSavingDiet(false)
+      return
+    }
+
+    alert('식단 기록 저장 완료')
+    setDietForm(createDietForm())
+    await loadDietLogs()
+    setActiveTab('식단')
+    setSavingDiet(false)
   }
 
   const ptHistory = workoutHistory.filter((row) => (row.workout_type || 'pt') === 'pt')
@@ -818,6 +941,226 @@ export default function MemberDashboard({ member, accessCode }) {
                 PT 세션 차감은 관리자 기록 작성 기준으로만 반영됩니다.
               </div>
             </div>
+          </section>
+        </div>
+      )}
+
+      {activeTab === '식단' && (
+        <div className="tab-page">
+          <section className="card section-card">
+            <div className="section-head">
+              <div>
+                <div className="section-label">식단 입력</div>
+                <h2>식단 상세 기록</h2>
+              </div>
+            </div>
+
+            <div className="form-block">
+              <div className="grid-2">
+                <div>
+                  <label>날짜</label>
+                  <input
+                    type="date"
+                    value={dietForm.date}
+                    onChange={(e) => setDietForm((prev) => ({ ...prev, date: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label>끼니</label>
+                  <select
+                    value={dietForm.meal_type}
+                    onChange={(e) => setDietForm((prev) => ({ ...prev, meal_type: e.target.value }))}
+                  >
+                    {mealTypeOptions.map((meal) => (
+                      <option key={meal}>{meal}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid-2">
+                <div>
+                  <label>음식명</label>
+                  <input
+                    placeholder="예: 닭가슴살 샐러드"
+                    value={dietForm.food_name}
+                    onChange={(e) => setDietForm((prev) => ({ ...prev, food_name: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label>양</label>
+                  <input
+                    placeholder="예: 1인분 / 200g"
+                    value={dietForm.amount}
+                    onChange={(e) => setDietForm((prev) => ({ ...prev, amount: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div className="grid-3">
+                <div>
+                  <label>탄수(g)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={dietForm.carbs}
+                    onChange={(e) => setDietForm((prev) => ({ ...prev, carbs: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label>단백질(g)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={dietForm.protein}
+                    onChange={(e) => setDietForm((prev) => ({ ...prev, protein: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label>지방(g)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={dietForm.fat}
+                    onChange={(e) => setDietForm((prev) => ({ ...prev, fat: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div className="grid-2">
+                <div>
+                  <label>식사 시간</label>
+                  <input
+                    placeholder="예: 08:30"
+                    value={dietForm.meal_time}
+                    onChange={(e) => setDietForm((prev) => ({ ...prev, meal_time: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label>배고픔 정도 (0~10)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="10"
+                    value={dietForm.hunger_level}
+                    onChange={(e) => setDietForm((prev) => ({ ...prev, hunger_level: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label>메모</label>
+                <textarea
+                  placeholder="식후 포만감, 특이사항, 간식 여부 등"
+                  value={dietForm.memo}
+                  onChange={(e) => setDietForm((prev) => ({ ...prev, memo: e.target.value }))}
+                />
+              </div>
+
+              <div className="save-row">
+                <button className="primary-btn" onClick={saveDietLog} disabled={savingDiet}>
+                  {savingDiet ? '저장 중...' : '식단 저장'}
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="card section-card">
+            <div className="section-head">
+              <div>
+                <div className="section-label">저장된 식단 기록</div>
+                <h2>월별 식단 보기</h2>
+              </div>
+              <div>
+                <input
+                  type="month"
+                  value={dietMonthFilter}
+                  onChange={(e) => setDietMonthFilter(e.target.value)}
+                  style={{ width: 180 }}
+                />
+              </div>
+            </div>
+
+            <div className="summary-grid">
+              <div className="summary-box">
+                <div className="summary-label">식단 기록 수</div>
+                <div className="summary-value">{dietSummary.totalMeals}건</div>
+              </div>
+              <div className="summary-box">
+                <div className="summary-label">평균 탄수</div>
+                <div className="summary-value">{dietSummary.avgCarbs}g</div>
+              </div>
+              <div className="summary-box">
+                <div className="summary-label">평균 단백질</div>
+                <div className="summary-value">{dietSummary.avgProtein}g</div>
+              </div>
+              <div className="summary-box">
+                <div className="summary-label">평균 지방</div>
+                <div className="summary-value">{dietSummary.avgFat}g</div>
+              </div>
+            </div>
+
+            {loadingDietLogs ? (
+              <div className="muted" style={{ marginTop: 16 }}>식단 기록 불러오는 중...</div>
+            ) : dietLogs.length === 0 ? (
+              <div className="muted" style={{ marginTop: 16 }}>해당 기간 식단 기록이 없습니다.</div>
+            ) : (
+              <div className="record-list" style={{ marginTop: 16 }}>
+                {dietLogs.map((log) => (
+                  <div className="record-card" key={log.id}>
+                    <div className="record-card-top">
+                      <div>
+                        <div className="record-date">{log.date}</div>
+                        <div className="record-meta">
+                          {log.meal_type || '-'} · {log.meal_time || '시간 미입력'}
+                        </div>
+                      </div>
+                      <div className="pill">배고픔 {log.hunger_level ?? '-'} / 10</div>
+                    </div>
+
+                    <div className="summary-grid" style={{ marginTop: 12 }}>
+                      <div className="summary-box">
+                        <div className="summary-label">음식명</div>
+                        <div className="summary-value" style={{ fontSize: 16 }}>
+                          {log.food_name || '-'}
+                        </div>
+                      </div>
+                      <div className="summary-box">
+                        <div className="summary-label">양</div>
+                        <div className="summary-value" style={{ fontSize: 16 }}>
+                          {log.amount || '-'}
+                        </div>
+                      </div>
+                      <div className="summary-box">
+                        <div className="summary-label">탄수</div>
+                        <div className="summary-value">{log.carbs ?? 0}g</div>
+                      </div>
+                      <div className="summary-box">
+                        <div className="summary-label">단백질</div>
+                        <div className="summary-value">{log.protein ?? 0}g</div>
+                      </div>
+                      <div className="summary-box">
+                        <div className="summary-label">지방</div>
+                        <div className="summary-value">{log.fat ?? 0}g</div>
+                      </div>
+                      <div className="summary-box">
+                        <div className="summary-label">메모</div>
+                        <div className="summary-value" style={{ fontSize: 16 }}>
+                          {log.memo || '-'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {log.feedback && (
+                      <div className="feedback good" style={{ marginTop: 14 }}>
+                        <div className="memo-title">관리자 피드백</div>
+                        <div>{log.feedback}</div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         </div>
       )}
