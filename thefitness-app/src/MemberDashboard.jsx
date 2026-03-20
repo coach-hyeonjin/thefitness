@@ -159,6 +159,8 @@ export default function MemberDashboard({ member, accessCode }) {
     loadWorkoutHistory()
     loadRoutines()
     loadManual()
+    setExpandedWorkoutIds([])
+    setActiveTab('내정보')
   }, [member.id])
 
   const monthlyStats = useMemo(() => {
@@ -268,7 +270,9 @@ export default function MemberDashboard({ member, accessCode }) {
               </div>
               <div className="summary-box">
                 <div className="summary-label">세션</div>
-                <div className="summary-value">{member.used_sessions} / {member.total_sessions}회</div>
+                <div className="summary-value">
+                  {member.used_sessions} / {member.total_sessions}회
+                </div>
               </div>
               <div className="summary-box">
                 <div className="summary-label">이번달 PT</div>
@@ -342,7 +346,8 @@ export default function MemberDashboard({ member, accessCode }) {
                         <div>
                           <div className="record-date">{workout.workout_date}</div>
                           <div className="record-meta">
-                            구분: {(workout.workout_type || 'pt') === 'self' ? '개인운동' : 'PT'} · 부위: {(workout.body_parts || []).join(', ') || '-'}
+                            구분: {(workout.workout_type || 'pt') === 'self' ? '개인운동' : 'PT'} · 부위:{' '}
+                            {(workout.body_parts || []).join(', ') || '-'}
                           </div>
                         </div>
 
@@ -369,7 +374,14 @@ export default function MemberDashboard({ member, accessCode }) {
 
                       {isExpanded && (
                         <div className="record-detail-list">
-                          {items.length === 0 ? (
+                          {(workout.workout_type || 'pt') === 'self' && items.length === 0 ? (
+                            <div className="memo-box">
+                              <div className="memo-title">개인운동 기록</div>
+                              <div>
+                                등록 부위: {(workout.body_parts || []).join(', ') || '-'}
+                              </div>
+                            </div>
+                          ) : items.length === 0 ? (
                             <div className="muted">상세 운동 항목이 없습니다.</div>
                           ) : (
                             items.map((item) => (
