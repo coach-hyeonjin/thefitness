@@ -129,6 +129,7 @@ export default function MemberDashboard({ member, accessCode }) {
 
   const [savingSelfWorkout, setSavingSelfWorkout] = useState(false)
   const [savingDiet, setSavingDiet] = useState(false)
+  const [editingDietId, setEditingDietId] = useState('')
 
   const [dietMonthFilter, setDietMonthFilter] = useState(getTodayKST().slice(0, 7))
 
@@ -499,6 +500,29 @@ export default function MemberDashboard({ member, accessCode }) {
     setSavingSelfWorkout(false)
   }
 
+  const startEditDietLog = (log) => {
+    setEditingDietId(log.id)
+    setDietForm({
+      date: log.date || getTodayKST(),
+      meal_type: log.meal_type || '아침',
+      food_name: log.food_name || '',
+      amount: log.amount || '',
+      carbs: log.carbs ?? '',
+      protein: log.protein ?? '',
+      fat: log.fat ?? '',
+      meal_time: log.meal_time || '',
+      hunger_level: log.hunger_level ?? 5,
+      memo: log.memo || '',
+    })
+    setActiveTab('식단')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const cancelEditDietLog = () => {
+    setEditingDietId('')
+    setDietForm(createDietForm())
+  }
+
   const saveDietLog = async () => {
     if (!dietForm.date) {
       alert('날짜를 입력해 주세요.')
@@ -512,21 +536,30 @@ export default function MemberDashboard({ member, accessCode }) {
 
     setSavingDiet(true)
 
-    const { error } = await supabase.from('diet_logs').insert([
-      {
-        member_id: member.id,
-        date: dietForm.date,
-        meal_type: dietForm.meal_type,
-        food_name: dietForm.food_name.trim(),
-        amount: dietForm.amount.trim(),
-        carbs: dietForm.carbs === '' ? null : Number(dietForm.carbs) || 0,
-        protein: dietForm.protein === '' ? null : Number(dietForm.protein) || 0,
-        fat: dietForm.fat === '' ? null : Number(dietForm.fat) || 0,
-        meal_time: dietForm.meal_time,
-        hunger_level: dietForm.hunger_level === '' ? null : Number(dietForm.hunger_level) || 0,
-        memo: dietForm.memo,
-      },
-    ])
+    const payload = {
+      member_id: member.id,
+      date: dietForm.date,
+      meal_type: dietForm.meal_type,
+      food_name: dietForm.food_name.trim(),
+      amount: dietForm.amount.trim(),
+      carbs: dietForm.carbs === '' ? null : Number(dietForm.carbs) || 0,
+      protein: dietForm.protein === '' ? null : Number(dietForm.protein) || 0,
+      fat: dietForm.fat === '' ? null : Number(dietForm.fat) || 0,
+      meal_time: dietForm.meal_time,
+      hunger_level: dietForm.hunger_level === '' ? null : Number(dietForm.hunger_level) || 0,
+      memo: dietForm.memo,
+      updated_at: new Date().toISOString(),
+    }
+
+    let error = null
+
+    if (editingDietId) {
+      const result = await supabase.from('diet_logs').update(payload).eq('id', editingDietId)
+      error = result.error
+    } else {
+      const result = await supabase.from('diet_logs').insert([payload])
+      error = result.error
+    }
 
     if (error) {
       alert(`식단 저장 오류: ${error.message}`)
@@ -534,11 +567,29 @@ export default function MemberDashboard({ member, accessCode }) {
       return
     }
 
-    alert('식단 기록 저장 완료')
+    alert(editingDietId ? '식단 수정 완료' : '식단 기록 저장 완료')
+    setEditingDietId('')
     setDietForm(createDietForm())
     await loadDietLogs()
-    setActiveTab('식단')
     setSavingDiet(false)
+  }
+
+  const deleteDietLog = async (dietLogId) => {
+    if (!window.confirm('이 식단 기록을 삭제할까요?')) return
+
+    const { error } = await supabase.from('diet_logs').delete().eq('id', dietLogId)
+
+    if (error) {
+      alert(`식단 삭제 오류: ${error.message}`)
+      return
+    }
+
+    if (editingDietId === dietLogId) {
+      cancelEditDietLog()
+    }
+
+    alert('식단 기록 삭제 완료')
+    await loadDietLogs()
   }
 
   const ptHistory = workoutHistory.filter((row) => (row.workout_type || 'pt') === 'pt')
@@ -950,9 +1001,14 @@ export default function MemberDashboard({ member, accessCode }) {
           <section className="card section-card">
             <div className="section-head">
               <div>
-                <div className="section-label">식단 입력</div>
-                <h2>식단 상세 기록</h2>
+                <div className="section-label">{editingDietId ? '식단 수정' : '식단 입력'}</div>
+                <h2>{editingDietId ? '식단 기록 수정하기' : '식단 상세 기록'}</h2>
               </div>
+              {editingDietId && (
+                <button className="secondary-btn" onClick={cancelEditDietLog}>
+                  수정 취소
+                </button>
+              )}
             </div>
 
             <div className="form-block">
@@ -1059,7 +1115,11 @@ export default function MemberDashboard({ member, accessCode }) {
 
               <div className="save-row">
                 <button className="primary-btn" onClick={saveDietLog} disabled={savingDiet}>
-                  {savingDiet ? '저장 중...' : '식단 저장'}
+                  {savingDiet
+                    ? '저장 중...'
+                    : editingDietId
+                      ? '식단 수정 저장'
+                      : '식단 저장'}
                 </button>
               </div>
             </div>
@@ -1115,7 +1175,15 @@ export default function MemberDashboard({ member, accessCode }) {
                           {log.meal_type || '-'} · {log.meal_time || '시간 미입력'}
                         </div>
                       </div>
-                      <div className="pill">배고픔 {log.hunger_level ?? '-'} / 10</div>
+                      <div className="button-row">
+                        <div className="pill">배고픔 {log.hunger_level ?? '-'} / 10</div>
+                        <button className="secondary-btn" onClick={() => startEditDietLog(log)}>
+                          수정
+                        </button>
+                        <button className="danger-btn" onClick={() => deleteDietLog(log.id)}>
+                          삭제
+                        </button>
+                      </div>
                     </div>
 
                     <div className="summary-grid" style={{ marginTop: 12 }}>
