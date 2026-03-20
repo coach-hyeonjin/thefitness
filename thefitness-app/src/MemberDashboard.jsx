@@ -706,11 +706,16 @@ export default function MemberDashboard({ member, accessCode }) {
                   ) : (
                     exercises
                       .filter((exercise) => {
-                        const bodyPartMatch = !item.bodyPart || exercise.body_part === item.bodyPart
                         const categoryMatch = !item.category || exercise.category === item.category
-                        return bodyPartMatch && categoryMatch
+
+                        if (item.category === '유산소') {
+                          return categoryMatch
+                        }
+
+                        const bodyPartMatch = !item.bodyPart || exercise.body_part === item.bodyPart
+                        return categoryMatch && bodyPartMatch
                       })
-                      .slice(0, 8)
+                      .slice(0, 12)
                       .map((exercise) => (
                         <button
                           type="button"
