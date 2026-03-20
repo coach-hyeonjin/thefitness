@@ -3,8 +3,18 @@ import { supabase } from './supabase'
 import './style.css'
 
 const bodyPartOptions = ['가슴', '어깨', '팔', '등', '하체', '스트레칭&재활', '유산소']
-const categoryOptions = ['웨이트', '유산소', '스트레칭&재활']
+const equipmentTypeOptions = [
+  '플레이트머신',
+  '핀머신',
+  '프리웨이트',
+  '기타웨이트',
+  '랙',
+  '유산소기구',
+  '소도구',
+  '스트레칭&재활',
+]
 const adminTabs = ['회원', '기록작성', '운동DB', '통계', '사용방법']
+
 const routineDays = [
   { dayKey: 'mon', dayLabel: '월요일' },
   { dayKey: 'tue', dayLabel: '화요일' },
@@ -50,7 +60,7 @@ function groupWorkoutItems(items = []) {
         id: key,
         exerciseName: row.exercise_name || '',
         bodyPart: row.body_part || '',
-        category: row.category || '',
+        equipmentType: row.category || '',
         brand: row.brand || '',
         goodPoint: row.good_point || '',
         improvePoint: row.improve_point || '',
@@ -82,6 +92,30 @@ function createDefaultRoutineRows() {
   }))
 }
 
+function parseBulkExerciseText(text) {
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  return lines
+    .map((line) => {
+      const parts = line.split('/').map((v) => v.trim())
+      if (parts.length < 4) return null
+
+      const [brand, equipmentType, bodyPart, name] = parts
+      if (!brand || !equipmentType || !bodyPart || !name) return null
+
+      return {
+        brand,
+        equipmentType,
+        bodyPart,
+        name,
+      }
+    })
+    .filter(Boolean)
+}
+
 export default function AdminDashboard({ user, profile, onLogout }) {
   const getDefaultBrandName = (brandRows = []) => {
     if (!brandRows || brandRows.length === 0) return '기본'
@@ -91,7 +125,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
 
   const createWorkoutItem = (defaultBrand = '기본') => ({
     id: `wi-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    category: '웨이트',
+    equipmentType: '핀머신',
     bodyPart: '등',
     brand: defaultBrand,
     exerciseName: '',
@@ -113,6 +147,8 @@ export default function AdminDashboard({ user, profile, onLogout }) {
   const [exercises, setExercises] = useState([])
   const [loadingExercises, setLoadingExercises] = useState(false)
   const [exerciseSearch, setExerciseSearch] = useState('')
+  const [bulkExerciseText, setBulkExerciseText] = useState('')
+  const [bulkImporting, setBulkImporting] = useState(false)
 
   const [workoutHistory, setWorkoutHistory] = useState([])
   const [editingWorkoutId, setEditingWorkoutId] = useState(null)
@@ -141,7 +177,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
   const [exerciseForm, setExerciseForm] = useState({
     name: '',
     bodyPart: '등',
-    category: '웨이트',
+    equipmentType: '핀머신',
     brand: '기본',
   })
 
@@ -149,7 +185,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
   const [editExerciseForm, setEditExerciseForm] = useState({
     name: '',
     bodyPart: '등',
-    category: '웨이트',
+    equipmentType: '핀머신',
     brand: '기본',
   })
 
@@ -196,7 +232,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     setExerciseForm({
       name: '',
       bodyPart: '등',
-      category: '웨이트',
+      equipmentType: '핀머신',
       brand: getDefaultBrandName(brandRows),
     })
   }
@@ -675,7 +711,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
       (exercise) =>
         exercise.name === exerciseForm.name.trim() &&
         exercise.body_part === exerciseForm.bodyPart &&
-        exercise.category === exerciseForm.category &&
+        exercise.category === exerciseForm.equipmentType &&
         exercise.brand_name === (exerciseForm.brand || getDefaultBrandName(brands))
     )
 
@@ -688,7 +724,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
       {
         name: exerciseForm.name.trim(),
         body_part: exerciseForm.bodyPart,
-        category: exerciseForm.category,
+        category: exerciseForm.equipmentType,
         brand_name: exerciseForm.brand || getDefaultBrandName(brands),
         sort_order: exercises.length + 1,
       },
@@ -703,12 +739,86 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     await loadExercises()
   }
 
+  const importBulkExercises = async () => {
+    const parsed = parseBulkExerciseText(bulkExerciseText)
+
+    if (parsed.length === 0) {
+      alert('붙여넣은 형식을 확인해 주세요.\n예: 뉴텍 / 플레이트머신 / 가슴 / 시티드 체스트 프레스')
+      return
+    }
+
+    setBulkImporting(true)
+
+    try {
+      const existingBrandNames = new Set(brands.map((b) => b.name))
+      const parsedBrandNames = [...new Set(parsed.map((row) => row.brand).filter(Boolean))]
+      const newBrands = parsedBrandNames.filter((name) => !existingBrandNames.has(name))
+
+      if (newBrands.length > 0) {
+        const { error: brandError } = await supabase.from('brands').insert(
+          newBrands.map((name, index) => ({
+            name,
+            sort_order: brands.length + index + 1,
+          }))
+        )
+
+        if (brandError) {
+          alert(`브랜드 자동추가 오류: ${brandError.message}`)
+          setBulkImporting(false)
+          return
+        }
+
+        await loadBrands()
+      }
+
+      const currentExercises = [...exercises]
+      const existingKeys = new Set(
+        currentExercises.map((row) =>
+          [row.name, row.body_part, row.category, row.brand_name].join('||')
+        )
+      )
+
+      const insertRows = parsed
+        .filter((row) => {
+          const key = [row.name, row.bodyPart, row.equipmentType, row.brand].join('||')
+          return !existingKeys.has(key)
+        })
+        .map((row, index) => ({
+          name: row.name,
+          body_part: row.bodyPart,
+          category: row.equipmentType,
+          brand_name: row.brand,
+          sort_order: currentExercises.length + index + 1,
+        }))
+
+      if (insertRows.length === 0) {
+        alert('새로 추가할 운동이 없습니다. 중복 항목만 있었습니다.')
+        setBulkImporting(false)
+        return
+      }
+
+      const { error: insertError } = await supabase.from('exercises').insert(insertRows)
+
+      if (insertError) {
+        alert(`운동 일괄추가 오류: ${insertError.message}`)
+        setBulkImporting(false)
+        return
+      }
+
+      await loadExercises()
+      setBulkExerciseText('')
+      alert(`${insertRows.length}개 운동을 추가했습니다.`)
+    } finally {
+      setBulkImporting(false)
+    }
+  }
+
   const openExerciseEdit = (exercise) => {
     setEditExerciseId(exercise.id)
     setEditExerciseForm({
       name: exercise.name || '',
       bodyPart: exercise.body_part || '등',
-      category: exercise.category || '웨이트',
+      equipmentType: exercise.category || '핀머신',
       brand: exercise.brand_name || getDefaultBrandName(brands),
     })
     setActiveTab('운동DB')
@@ -719,7 +829,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     setEditExerciseForm({
       name: '',
       bodyPart: '등',
-      category: '웨이트',
+      equipmentType: '핀머신',
       brand: getDefaultBrandName(brands),
     })
   }
@@ -735,7 +845,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
         exercise.id !== editExerciseId &&
         exercise.name === editExerciseForm.name.trim() &&
         exercise.body_part === editExerciseForm.bodyPart &&
-        exercise.category === editExerciseForm.category &&
+        exercise.category === editExerciseForm.equipmentType &&
         exercise.brand_name === (editExerciseForm.brand || getDefaultBrandName(brands))
     )
 
@@ -749,7 +859,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
       .update({
         name: editExerciseForm.name.trim(),
         body_part: editExerciseForm.bodyPart,
-        category: editExerciseForm.category,
+        category: editExerciseForm.equipmentType,
         brand_name: editExerciseForm.brand || getDefaultBrandName(brands),
       })
       .eq('id', editExerciseId)
@@ -857,7 +967,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     updateWorkoutItem(itemIndex, {
       exerciseName: exercise.name,
       bodyPart: exercise.body_part,
-      category: exercise.category,
+      equipmentType: exercise.category,
       brand: exercise.brand_name,
     })
   }
@@ -909,7 +1019,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     const itemRows = workoutDraft.items.flatMap((item) =>
       item.sets.map((setRow, index) => ({
         workout_id: workoutData.id,
-        category: item.category,
+        category: item.equipmentType,
         body_part: item.bodyPart,
         brand: item.brand,
         exercise_name: item.exerciseName,
@@ -946,7 +1056,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
       if (!map.has(key)) {
         map.set(key, {
           id: `edit-${Math.random()}`,
-          category: row.category,
+          equipmentType: row.category,
           bodyPart: row.body_part,
           brand: row.brand,
           exerciseName: row.exercise_name,
@@ -1503,10 +1613,10 @@ export default function AdminDashboard({ user, profile, onLogout }) {
 
                       <div className="grid-3">
                         <select
-                          value={item.category}
-                          onChange={(e) => updateWorkoutItem(itemIndex, { category: e.target.value })}
+                          value={item.equipmentType}
+                          onChange={(e) => updateWorkoutItem(itemIndex, { equipmentType: e.target.value })}
                         >
-                          {categoryOptions.map((o) => (
+                          {equipmentTypeOptions.map((o) => (
                             <option key={o}>{o}</option>
                           ))}
                         </select>
@@ -1539,14 +1649,19 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                       <div className="mini-ex-list">
                         {filteredExercises
                           .filter((exercise) => {
-                            const categoryMatch = !item.category || exercise.category === item.category
+                            const typeMatch = !item.equipmentType || exercise.category === item.equipmentType
 
-                            if (item.category === '유산소') {
-                              return categoryMatch
+                            if (item.equipmentType === '유산소기구') {
+                              return typeMatch
+                            }
+
+                            if (item.equipmentType === '소도구' || item.equipmentType === '스트레칭&재활') {
+                              if (!item.bodyPart) return typeMatch
+                              return typeMatch && exercise.body_part === item.bodyPart
                             }
 
                             const bodyPartMatch = !item.bodyPart || exercise.body_part === item.bodyPart
-                            return categoryMatch && bodyPartMatch
+                            return typeMatch && bodyPartMatch
                           })
                           .slice(0, 12)
                           .map((exercise) => (
@@ -1704,7 +1819,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
 
                                 <div className="tag-row" style={{ marginTop: 8 }}>
                                   <span className="tag">{item.bodyPart}</span>
-                                  <span className="tag">{item.category}</span>
+                                  <span className="tag">{item.equipmentType}</span>
                                   <span className="tag">{item.brand}</span>
                                 </div>
 
@@ -1829,10 +1944,10 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                       ))}
                     </select>
                     <select
-                      value={editExerciseForm.category}
-                      onChange={(e) => setEditExerciseForm({ ...editExerciseForm, category: e.target.value })}
+                      value={editExerciseForm.equipmentType}
+                      onChange={(e) => setEditExerciseForm({ ...editExerciseForm, equipmentType: e.target.value })}
                     >
-                      {categoryOptions.map((o) => (
+                      {equipmentTypeOptions.map((o) => (
                         <option key={o}>{o}</option>
                       ))}
                     </select>
@@ -1873,10 +1988,10 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                     ))}
                   </select>
                   <select
-                    value={exerciseForm.category}
-                    onChange={(e) => setExerciseForm({ ...exerciseForm, category: e.target.value })}
+                    value={exerciseForm.equipmentType}
+                    onChange={(e) => setExerciseForm({ ...exerciseForm, equipmentType: e.target.value })}
                   >
-                    {categoryOptions.map((o) => (
+                    {equipmentTypeOptions.map((o) => (
                       <option key={o}>{o}</option>
                     ))}
                   </select>
@@ -1891,6 +2006,23 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                 </div>
                 <button className="secondary-btn" onClick={addExercise}>
                   운동 추가
+                </button>
+              </div>
+
+              <div className="form-block" style={{ marginTop: 12 }}>
+                <textarea
+                  placeholder={
+                    '대량등록 형식\n예:\n뉴텍 / 플레이트머신 / 가슴 / 시티드 체스트 프레스\n뉴텍 / 핀머신 / 하체 / 레그 익스텐션'
+                  }
+                  value={bulkExerciseText}
+                  onChange={(e) => setBulkExerciseText(e.target.value)}
+                />
+                <button
+                  className="primary-btn"
+                  onClick={importBulkExercises}
+                  disabled={bulkImporting}
+                >
+                  {bulkImporting ? '대량등록 중...' : '운동 일괄 등록'}
                 </button>
               </div>
 
