@@ -221,93 +221,16 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    let mounted = true
-
-    const restoreMemberSession = () => {
-      try {
-        const raw = localStorage.getItem(MEMBER_SESSION_KEY)
-        if (!raw) return false
-
-        const parsed = JSON.parse(raw)
-        if (!parsed?.member || !parsed?.accessCode) {
-          localStorage.removeItem(MEMBER_SESSION_KEY)
-          return false
-        }
-
-        if (memberIdFromUrl && parsed.member.id !== memberIdFromUrl) {
-          localStorage.removeItem(MEMBER_SESSION_KEY)
-          return false
-        }
-
-        if (mounted) {
-          setMemberSession(parsed)
-        }
-        return true
-      } catch {
-        localStorage.removeItem(MEMBER_SESSION_KEY)
-        return false
-      }
-    }
-
-    const restoreAdminSession = async () => {
-      try {
-        const {
-          data: { session },
-          error: sessionError,
-        } = await supabase.auth.getSession()
-
-        if (sessionError) {
-          return false
-        }
-
-        const sessionUser = session?.user
-        if (!sessionUser) return false
-
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', sessionUser.id)
-          .maybeSingle()
-
-        if (profileError || !profileData || profileData.role !== 'admin') {
-          await supabase.auth.signOut()
-          return false
-        }
-
-        if (mounted) {
-          setAdminUser(sessionUser)
-          setAdminProfile(profileData)
-        }
-
-        return true
-      } catch {
-        return false
-      }
-    }
+    let isMounted = true
 
     const init = async () => {
       try {
-        const adminRestored = await restoreAdminSession()
+        // 1. 관리자 세션 복구 먼저 확인
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
 
-        if (!adminRestored) {
-          restoreMemberSession()
-        }
-      } finally {
-        if (mounted) {
-          setBooting(false)
-        }
-      }
-    }
-
-    init()
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (!mounted) return
-
-      if (session?.user) {
-        try {
+        if (session?.user) {
           const { data: profileData } = await supabase
             .from('profiles')
             .select('*')
@@ -315,23 +238,49 @@ export default function App() {
             .maybeSingle()
 
           if (profileData?.role === 'admin') {
-            setAdminUser(session.user)
-            setAdminProfile(profileData)
-            setMemberSession(null)
+            if (isMounted) {
+              setAdminUser(session.user)
+              setAdminProfile(profileData)
+              setBooting(false)
+            }
+            return
+          } else {
+            await supabase.auth.signOut()
           }
-        } catch {
-          setAdminUser(null)
-          setAdminProfile(null)
         }
-      } else {
-        setAdminUser(null)
-        setAdminProfile(null)
+
+        // 2. 회원 세션 복구
+        const raw = localStorage.getItem(MEMBER_SESSION_KEY)
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw)
+
+            if (parsed?.member && parsed?.accessCode) {
+              if (!memberIdFromUrl || parsed.member.id === memberIdFromUrl) {
+                if (isMounted) {
+                  setMemberSession(parsed)
+                  setBooting(false)
+                }
+                return
+              }
+            }
+          } catch {
+            localStorage.removeItem(MEMBER_SESSION_KEY)
+          }
+        }
+      } catch {
+        // 아무것도 안 하고 아래에서 로그인 화면으로 넘김
       }
-    })
+
+      if (isMounted) {
+        setBooting(false)
+      }
+    }
+
+    init()
 
     return () => {
-      mounted = false
-      subscription?.unsubscribe()
+      isMounted = false
     }
   }, [memberIdFromUrl])
 
