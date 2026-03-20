@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { supabase } from './supabase'
 import MainDashboard from './MainDashboard'
 import MemberDashboard from './MemberDashboard'
@@ -121,13 +121,6 @@ function MemberEntry({ memberIdFromUrl = '' }) {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
 
-  useEffect(() => {
-    setMemberId(memberIdFromUrl || '')
-    setCode('')
-    setMember(null)
-    setMessage('')
-  }, [memberIdFromUrl])
-
   const handleEnter = async () => {
     if (loading) return
 
@@ -217,7 +210,6 @@ function MemberEntry({ memberIdFromUrl = '' }) {
 export default function App() {
   const [adminUser, setAdminUser] = useState(null)
   const [adminProfile, setAdminProfile] = useState(null)
-  const [checkingSession, setCheckingSession] = useState(true)
 
   const memberIdFromUrl = useMemo(() => {
     return new URLSearchParams(window.location.search).get('member') || ''
@@ -228,89 +220,11 @@ export default function App() {
     setAdminProfile(profile)
   }
 
-  const loadAdminSession = async (sessionUser) => {
-    if (!sessionUser) {
-      setAdminUser(null)
-      setAdminProfile(null)
-      return
-    }
-
-    const { data: profileData, error: profileError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', sessionUser.id)
-      .maybeSingle()
-
-    if (profileError) {
-      console.error('프로필 조회 오류:', profileError.message)
-      setAdminUser(null)
-      setAdminProfile(null)
-      return
-    }
-
-    if (!profileData || profileData.role !== 'admin') {
-      setAdminUser(null)
-      setAdminProfile(null)
-      return
-    }
-
-    setAdminUser(sessionUser)
-    setAdminProfile(profileData)
-  }
-
-  useEffect(() => {
-    let mounted = true
-
-    const init = async () => {
-      try {
-        const { data, error } = await supabase.auth.getSession()
-
-        if (error) {
-          console.error('세션 조회 오류:', error.message)
-        }
-
-        if (!mounted) return
-
-        const sessionUser = data?.session?.user || null
-        await loadAdminSession(sessionUser)
-      } catch (e) {
-        console.error('초기 세션 확인 오류:', e.message)
-      } finally {
-        if (mounted) setCheckingSession(false)
-      }
-    }
-
-    init()
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      await loadAdminSession(session?.user || null)
-    })
-
-    return () => {
-      mounted = false
-      subscription.unsubscribe()
-    }
-  }, [])
-
   const handleLogout = async () => {
     await supabase.auth.signOut()
     setAdminUser(null)
     setAdminProfile(null)
     window.location.href = window.location.origin
-  }
-
-  if (checkingSession) {
-    return (
-      <div className="entry-shell">
-        <div className="entry-header">
-          <img src={logo} alt="더피트니스 화정점 로고" className="main-logo" />
-          <h1>더피트니스 화정점</h1>
-          <p>불러오는 중입니다...</p>
-        </div>
-      </div>
-    )
   }
 
   if (adminUser && adminProfile) {
