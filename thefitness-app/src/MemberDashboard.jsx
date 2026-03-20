@@ -120,6 +120,7 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
   })
   const [exercises, setExercises] = useState([])
   const [dietLogs, setDietLogs] = useState([])
+  const [expandedDietIds, setExpandedDietIds] = useState([])
 
   const [loadingHistory, setLoadingHistory] = useState(true)
   const [loadingRoutine, setLoadingRoutine] = useState(true)
@@ -154,51 +155,6 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
     const names = [...new Set((exercises || []).map((e) => e.brand_name).filter(Boolean))]
     return names.length > 0 ? names : ['기본']
   }, [exercises])
-
-  const ptHistory = useMemo(
-    () => workoutHistory.filter((row) => (row.workout_type || 'pt') === 'pt'),
-    [workoutHistory]
-  )
-
-  const selfHistory = useMemo(
-    () => workoutHistory.filter((row) => (row.workout_type || 'pt') === 'self'),
-    [workoutHistory]
-  )
-
-  const monthlyStats = useMemo(() => {
-    const monthKey = getTodayKST().slice(0, 7)
-    const currentMonthRows = workoutHistory.filter(
-      (row) => (row.workout_date || '').slice(0, 7) === monthKey
-    )
-
-    return {
-      total: currentMonthRows.length,
-      pt: currentMonthRows.filter((row) => (row.workout_type || 'pt') === 'pt').length,
-      self: currentMonthRows.filter((row) => (row.workout_type || 'pt') === 'self').length,
-    }
-  }, [workoutHistory])
-
-  const dietSummary = useMemo(() => {
-    const totalMeals = dietLogs.length
-    const avgCarbs =
-      totalMeals > 0
-        ? Math.round(
-            dietLogs.reduce((sum, row) => sum + (Number(row.carbs) || 0), 0) / totalMeals
-          )
-        : 0
-    const avgProtein =
-      totalMeals > 0
-        ? Math.round(
-            dietLogs.reduce((sum, row) => sum + (Number(row.protein) || 0), 0) / totalMeals
-          )
-        : 0
-    const avgFat =
-      totalMeals > 0
-        ? Math.round(dietLogs.reduce((sum, row) => sum + (Number(row.fat) || 0), 0) / totalMeals)
-        : 0
-
-    return { totalMeals, avgCarbs, avgProtein, avgFat }
-  }, [dietLogs])
 
   const loadWorkoutHistory = async () => {
     setLoadingHistory(true)
@@ -321,6 +277,7 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
     loadExercises()
     loadDietLogs()
     setExpandedWorkoutIds([])
+    setExpandedDietIds([])
     setActiveTab('내정보')
   }, [member.id])
 
@@ -344,11 +301,50 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
     }))
   }, [brandNames])
 
+  const monthlyStats = useMemo(() => {
+    const monthKey = getTodayKST().slice(0, 7)
+    const currentMonthRows = workoutHistory.filter(
+      (row) => (row.workout_date || '').slice(0, 7) === monthKey
+    )
+
+    return {
+      total: currentMonthRows.length,
+      pt: currentMonthRows.filter((row) => (row.workout_type || 'pt') === 'pt').length,
+      self: currentMonthRows.filter((row) => (row.workout_type || 'pt') === 'self').length,
+    }
+  }, [workoutHistory])
+
+  const dietSummary = useMemo(() => {
+    const totalMeals = dietLogs.length
+    const avgCarbs =
+      totalMeals > 0
+        ? Math.round(dietLogs.reduce((sum, row) => sum + (Number(row.carbs) || 0), 0) / totalMeals)
+        : 0
+    const avgProtein =
+      totalMeals > 0
+        ? Math.round(dietLogs.reduce((sum, row) => sum + (Number(row.protein) || 0), 0) / totalMeals)
+        : 0
+    const avgFat =
+      totalMeals > 0
+        ? Math.round(dietLogs.reduce((sum, row) => sum + (Number(row.fat) || 0), 0) / totalMeals)
+        : 0
+
+    return { totalMeals, avgCarbs, avgProtein, avgFat }
+  }, [dietLogs])
+
   const toggleWorkout = (workoutId) => {
     setExpandedWorkoutIds((prev) =>
       prev.includes(workoutId)
         ? prev.filter((id) => id !== workoutId)
         : [...prev, workoutId]
+    )
+  }
+
+  const toggleDietDetail = (dietId) => {
+    setExpandedDietIds((prev) =>
+      prev.includes(dietId)
+        ? prev.filter((id) => id !== dietId)
+        : [...prev, dietId]
     )
   }
 
@@ -605,6 +601,9 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
     alert('식단 기록 삭제 완료')
     await loadDietLogs()
   }
+
+  const ptHistory = workoutHistory.filter((row) => (row.workout_type || 'pt') === 'pt')
+  const selfHistory = workoutHistory.filter((row) => (row.workout_type || 'pt') === 'self')
 
   return (
     <div className="dashboard-shell member-shell">
@@ -1146,7 +1145,7 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
             <div className="section-head">
               <div>
                 <div className="section-label">저장된 식단 기록</div>
-                <h2>월별 식단 보기</h2>
+                <h2>간추려보기 / 상세히 보기</h2>
               </div>
               <div>
                 <input
@@ -1187,68 +1186,93 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
               </div>
             ) : (
               <div className="record-list" style={{ marginTop: 16 }}>
-                {dietLogs.map((log) => (
-                  <div className="record-card" key={log.id}>
-                    <div className="record-card-top">
-                      <div>
-                        <div className="record-date">{log.date}</div>
-                        <div className="record-meta">
-                          {log.meal_type || '-'} · {log.meal_time || '시간 미입력'}
+                {dietLogs.map((log) => {
+                  const isExpanded = expandedDietIds.includes(log.id)
+
+                  return (
+                    <div className="record-card" key={log.id}>
+                      <div className="record-card-top">
+                        <div>
+                          <div className="record-date">{log.date}</div>
+                          <div className="record-meta">
+                            {log.meal_type || '-'} · {log.meal_time || '시간 미입력'} · {log.food_name || '-'}
+                          </div>
+                        </div>
+
+                        <div className="button-row">
+                          <div className="pill">배고픔 {log.hunger_level ?? '-'} / 10</div>
+                          <button className="secondary-btn" onClick={() => toggleDietDetail(log.id)}>
+                            {isExpanded ? '간추려보기' : '상세히 보기'}
+                          </button>
                         </div>
                       </div>
 
-                      <div className="button-row">
-                        <div className="pill">배고픔 {log.hunger_level ?? '-'} / 10</div>
-                        <button className="secondary-btn" onClick={() => startEditDietLog(log)}>
-                          수정
-                        </button>
-                        <button className="danger-btn" onClick={() => deleteDietLog(log.id)}>
-                          삭제
-                        </button>
+                      <div className="record-summary-grid">
+                        <div className="record-summary-box">
+                          <div className="summary-label">탄수</div>
+                          <div className="summary-value">{log.carbs ?? 0}g</div>
+                        </div>
+                        <div className="record-summary-box">
+                          <div className="summary-label">단백질</div>
+                          <div className="summary-value">{log.protein ?? 0}g</div>
+                        </div>
                       </div>
+
+                      {isExpanded && (
+                        <>
+                          <div className="summary-grid" style={{ marginTop: 12 }}>
+                            <div className="summary-box">
+                              <div className="summary-label">음식명</div>
+                              <div className="summary-value" style={{ fontSize: 16 }}>
+                                {log.food_name || '-'}
+                              </div>
+                            </div>
+                            <div className="summary-box">
+                              <div className="summary-label">양</div>
+                              <div className="summary-value" style={{ fontSize: 16 }}>
+                                {log.amount || '-'}
+                              </div>
+                            </div>
+                            <div className="summary-box">
+                              <div className="summary-label">탄수</div>
+                              <div className="summary-value">{log.carbs ?? 0}g</div>
+                            </div>
+                            <div className="summary-box">
+                              <div className="summary-label">단백질</div>
+                              <div className="summary-value">{log.protein ?? 0}g</div>
+                            </div>
+                            <div className="summary-box">
+                              <div className="summary-label">지방</div>
+                              <div className="summary-value">{log.fat ?? 0}g</div>
+                            </div>
+                            <div className="summary-box">
+                              <div className="summary-label">메모</div>
+                              <div className="summary-value" style={{ fontSize: 16 }}>
+                                {log.memo || '-'}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="button-row" style={{ marginTop: 14 }}>
+                            <button className="secondary-btn" onClick={() => startEditDietLog(log)}>
+                              수정
+                            </button>
+                            <button className="danger-btn" onClick={() => deleteDietLog(log.id)}>
+                              삭제
+                            </button>
+                          </div>
+
+                          {log.feedback && (
+                            <div className="feedback good" style={{ marginTop: 14 }}>
+                              <div className="memo-title">관리자 피드백</div>
+                              <div>{log.feedback}</div>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
-
-                    <div className="summary-grid" style={{ marginTop: 12 }}>
-                      <div className="summary-box">
-                        <div className="summary-label">음식명</div>
-                        <div className="summary-value" style={{ fontSize: 16 }}>
-                          {log.food_name || '-'}
-                        </div>
-                      </div>
-                      <div className="summary-box">
-                        <div className="summary-label">양</div>
-                        <div className="summary-value" style={{ fontSize: 16 }}>
-                          {log.amount || '-'}
-                        </div>
-                      </div>
-                      <div className="summary-box">
-                        <div className="summary-label">탄수</div>
-                        <div className="summary-value">{log.carbs ?? 0}g</div>
-                      </div>
-                      <div className="summary-box">
-                        <div className="summary-label">단백질</div>
-                        <div className="summary-value">{log.protein ?? 0}g</div>
-                      </div>
-                      <div className="summary-box">
-                        <div className="summary-label">지방</div>
-                        <div className="summary-value">{log.fat ?? 0}g</div>
-                      </div>
-                      <div className="summary-box">
-                        <div className="summary-label">메모</div>
-                        <div className="summary-value" style={{ fontSize: 16 }}>
-                          {log.memo || '-'}
-                        </div>
-                      </div>
-                    </div>
-
-                    {log.feedback && (
-                      <div className="feedback good" style={{ marginTop: 14 }}>
-                        <div className="memo-title">관리자 피드백</div>
-                        <div>{log.feedback}</div>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </section>
