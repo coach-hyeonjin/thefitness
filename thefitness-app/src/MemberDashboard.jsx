@@ -131,6 +131,7 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
   const [savingSelfWorkout, setSavingSelfWorkout] = useState(false)
   const [savingDiet, setSavingDiet] = useState(false)
   const [editingDietId, setEditingDietId] = useState('')
+  const [editingSelfWorkoutId, setEditingSelfWorkoutId] = useState('')
 
   const [dietMonthFilter, setDietMonthFilter] = useState(getTodayKST().slice(0, 7))
 
@@ -432,6 +433,47 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
     })
   }
 
+  const resetSelfWorkoutForm = () => {
+    setEditingSelfWorkoutId('')
+    setSelfWorkoutForm({
+      workout_date: getTodayKST(),
+      bodyParts: [],
+      items: [createSelfWorkoutItem(brandNames[0] || '기본')],
+    })
+  }
+
+  const startEditSelfWorkout = (workout) => {
+    const grouped = groupWorkoutItems(workout.workout_items || [])
+
+    setEditingSelfWorkoutId(workout.id)
+    setSelfWorkoutForm({
+      workout_date: workout.workout_date || getTodayKST(),
+      bodyParts: workout.body_parts || [],
+      items:
+        grouped.length > 0
+          ? grouped.map((item) => ({
+              id: `edit-${Math.random().toString(36).slice(2, 8)}`,
+              equipmentType: item.equipmentType || '핀머신',
+              bodyPart: item.bodyPart || '등',
+              brand: item.brand || brandNames[0] || '기본',
+              exerciseName: item.exerciseName || '',
+              sets: normalizeSetNumbers(
+                (item.sets || []).map((setRow) => ({
+                  setNo: setRow.setNo || 1,
+                  kg: Number(setRow.kg || 0),
+                  reps: Number(setRow.reps || 0),
+                }))
+              ),
+              goodPoint: item.goodPoint || '',
+              improvePoint: item.improvePoint || '',
+            }))
+          : [createSelfWorkoutItem(brandNames[0] || '기본')],
+    })
+
+    setActiveTab('개인운동입력')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   const saveSelfWorkout = async () => {
     if (!selfWorkoutForm.workout_date) {
       alert('날짜를 입력해 주세요.')
@@ -454,6 +496,65 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
     }
 
     setSavingSelfWorkout(true)
+
+    if (editingSelfWorkoutId) {
+      const { error: workoutUpdateError } = await supabase
+        .from('workouts')
+        .update({
+          workout_date: selfWorkoutForm.workout_date,
+          body_parts: selfWorkoutForm.bodyParts,
+        })
+        .eq('id', editingSelfWorkoutId)
+        .eq('member_id', member.id)
+        .eq('workout_type', 'self')
+
+      if (workoutUpdateError) {
+        alert(`개인운동 수정 오류: ${workoutUpdateError.message}`)
+        setSavingSelfWorkout(false)
+        return
+      }
+
+      const { error: deleteItemsError } = await supabase
+        .from('workout_items')
+        .delete()
+        .eq('workout_id', editingSelfWorkoutId)
+
+      if (deleteItemsError) {
+        alert(`기존 세부기록 삭제 오류: ${deleteItemsError.message}`)
+        setSavingSelfWorkout(false)
+        return
+      }
+
+      const itemRows = cleanedItems.flatMap((item) =>
+        item.sets.map((setRow, index) => ({
+          workout_id: editingSelfWorkoutId,
+          category: item.equipmentType,
+          body_part: item.bodyPart,
+          brand: item.brand,
+          exercise_name: item.exerciseName,
+          set_no: index + 1,
+          kg: Number(setRow.kg) || 0,
+          reps: Number(setRow.reps) || 0,
+          good_point: item.goodPoint || '',
+          improve_point: item.improvePoint || '',
+        }))
+      )
+
+      const { error: insertItemsError } = await supabase.from('workout_items').insert(itemRows)
+
+      if (insertItemsError) {
+        alert(`개인운동 세부 수정 오류: ${insertItemsError.message}`)
+        setSavingSelfWorkout(false)
+        return
+      }
+
+      alert('개인운동 수정 완료')
+      resetSelfWorkoutForm()
+      await loadWorkoutHistory()
+      setActiveTab('저장된 운동기록')
+      setSavingSelfWorkout(false)
+      return
+    }
 
     const { data: workoutData, error: workoutError } = await supabase
       .from('workouts')
@@ -498,16 +599,33 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
     }
 
     alert('개인운동 기록 저장 완료')
-
-    setSelfWorkoutForm({
-      workout_date: getTodayKST(),
-      bodyParts: [],
-      items: [createSelfWorkoutItem(brandNames[0] || '기본')],
-    })
-
+    resetSelfWorkoutForm()
     await loadWorkoutHistory()
     setActiveTab('저장된 운동기록')
     setSavingSelfWorkout(false)
+  }
+
+  const deleteSelfWorkout = async (workoutId) => {
+    if (!window.confirm('이 개인운동 기록을 삭제할까요?')) return
+
+    const { error } = await supabase
+      .from('workouts')
+      .delete()
+      .eq('id', workoutId)
+      .eq('member_id', member.id)
+      .eq('workout_type', 'self')
+
+    if (error) {
+      alert(`개인운동 삭제 오류: ${error.message}`)
+      return
+    }
+
+    if (editingSelfWorkoutId === workoutId) {
+      resetSelfWorkoutForm()
+    }
+
+    alert('개인운동 기록 삭제 완료')
+    await loadWorkoutHistory()
   }
 
   const startEditDietLog = (log) => {
@@ -722,6 +840,7 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
                 {workoutHistory.map((workout) => {
                   const { exerciseCount, totalSets, items } = summarizeWorkout(workout)
                   const isExpanded = expandedWorkoutIds.includes(workout.id)
+                  const isSelfWorkout = (workout.workout_type || 'pt') === 'self'
 
                   return (
                     <div className="record-card" key={workout.id}>
@@ -729,7 +848,7 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
                         <div>
                           <div className="record-date">{workout.workout_date}</div>
                           <div className="record-meta">
-                            구분: {(workout.workout_type || 'pt') === 'self' ? '개인운동' : 'PT'} · 부위:{' '}
+                            구분: {isSelfWorkout ? '개인운동' : 'PT'} · 부위:{' '}
                             {(workout.body_parts || []).join(', ') || '-'}
                           </div>
                         </div>
@@ -738,6 +857,17 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
                           <button className="secondary-btn" onClick={() => toggleWorkout(workout.id)}>
                             {isExpanded ? '간추려보기' : '상세히 보기'}
                           </button>
+
+                          {isSelfWorkout && (
+                            <>
+                              <button className="secondary-btn" onClick={() => startEditSelfWorkout(workout)}>
+                                수정
+                              </button>
+                              <button className="danger-btn" onClick={() => deleteSelfWorkout(workout.id)}>
+                                삭제
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
 
@@ -806,9 +936,15 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
           <section className="card section-card">
             <div className="section-head">
               <div>
-                <div className="section-label">개인운동 입력</div>
-                <h2>부위 / 기구 선택해서 기록하기</h2>
+                <div className="section-label">{editingSelfWorkoutId ? '개인운동 수정' : '개인운동 입력'}</div>
+                <h2>{editingSelfWorkoutId ? '개인운동 기록 수정하기' : '부위 / 기구 선택해서 기록하기'}</h2>
               </div>
+
+              {editingSelfWorkoutId && (
+                <button className="secondary-btn" onClick={resetSelfWorkoutForm}>
+                  수정 취소
+                </button>
+              )}
             </div>
 
             <div className="form-block">
@@ -997,7 +1133,11 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
                 onClick={saveSelfWorkout}
                 disabled={savingSelfWorkout}
               >
-                {savingSelfWorkout ? '저장 중...' : '개인운동 저장'}
+                {savingSelfWorkout
+                  ? '저장 중...'
+                  : editingSelfWorkoutId
+                    ? '개인운동 수정 저장'
+                    : '개인운동 저장'}
               </button>
             </div>
 
