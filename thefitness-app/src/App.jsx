@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { supabase } from './supabase'
-import MainDashboard from './MainDashboard'
+import AdminDashboard from './AdminDashboard'
 import MemberDashboard from './MemberDashboard'
 import './style.css'
 import logo from './assets/logo.png'
@@ -139,7 +139,11 @@ function MemberEntry({ memberIdFromUrl = '' }) {
       })
 
       if (error) {
-        setMessage(`입장 오류: ${error.message}`)
+        if (error.message?.includes('invalid input syntax for type uuid')) {
+          setMessage('회원 링크가 올바르지 않습니다. 관리자에게 다시 받은 링크로 접속해 주세요.')
+        } else {
+          setMessage(`입장 오류: ${error.message}`)
+        }
         return
       }
 
@@ -229,7 +233,7 @@ export default function App() {
 
   if (adminUser && adminProfile) {
     return (
-      <MainDashboard
+      <AdminDashboard
         user={adminUser}
         profile={adminProfile}
         onLogout={handleLogout}
