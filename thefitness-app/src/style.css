@@ -83,6 +83,7 @@ label {
   color: var(--sub);
 }
 
+/* entry */
 .entry-shell {
   max-width: 1100px;
   margin: 0 auto;
@@ -146,6 +147,7 @@ label {
   margin: 0 0 14px;
 }
 
+/* common shells */
 .dashboard-shell {
   max-width: 1280px;
   margin: 0 auto;
@@ -222,6 +224,65 @@ label {
   padding: 24px;
 }
 
+/* MainDashboard layout */
+.app-shell {
+  max-width: 1380px;
+  margin: 0 auto;
+  padding: 24px 18px 60px;
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 18px;
+}
+
+.sidebar {
+  position: sticky;
+  top: 18px;
+  align-self: start;
+  padding: 20px;
+}
+
+.main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.dashboard-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.menu-btn {
+  width: 100%;
+  text-align: left;
+  padding: 13px 14px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-weight: 700;
+  transition: 0.2s ease;
+}
+
+.menu-btn:hover {
+  background: #f9fafb;
+}
+
+.menu-btn.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.top-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+/* flex helpers */
 .section-head,
 .history-head,
 .workout-card-head,
@@ -229,7 +290,11 @@ label {
 .save-row,
 .button-row,
 .record-card-top,
-.member-card-top {
+.member-card-top,
+.member-header,
+.date-row,
+.workout-card-head,
+.history-card .history-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -251,11 +316,13 @@ label {
   gap: 12px;
 }
 
+/* grids */
 .grid-2,
 .grid-3,
 .summary-grid,
 .record-summary-grid,
-.member-feedback-grid {
+.member-feedback-grid,
+.stat-grid {
   display: grid;
   gap: 12px;
 }
@@ -263,7 +330,8 @@ label {
 .grid-2,
 .summary-grid,
 .record-summary-grid,
-.member-feedback-grid {
+.member-feedback-grid,
+.stat-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -271,6 +339,7 @@ label {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+/* buttons */
 .primary-btn,
 .secondary-btn,
 .danger-btn,
@@ -329,6 +398,7 @@ label {
   width: 100%;
 }
 
+/* text helpers */
 .muted {
   color: var(--sub);
   font-size: 14px;
@@ -359,12 +429,19 @@ label {
   font-weight: 700;
 }
 
+/* summary / cards */
 .summary-box,
-.record-summary-box {
+.record-summary-box,
+.soft-card {
   padding: 16px;
   border-radius: 16px;
   background: #f9fafb;
   border: 1px solid var(--line);
+}
+
+.soft-card.green {
+  background: var(--green-soft);
+  border-color: var(--green-line);
 }
 
 .summary-label {
@@ -373,10 +450,17 @@ label {
   margin-bottom: 6px;
 }
 
-.summary-value {
+.summary-value,
+.stat-number,
+.session-big,
+.date-val {
   font-size: 20px;
   font-weight: 800;
   color: var(--text);
+}
+
+.session-big {
+  color: var(--primary-dark);
 }
 
 .progress-wrap {
@@ -419,13 +503,15 @@ label {
   margin-bottom: 8px;
 }
 
+/* lists */
 .member-list,
 .exercise-list,
 .history-list,
 .routine-list,
 .routine-admin-list,
 .record-list,
-.list-card-group {
+.list-card-group,
+.modern-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -437,18 +523,24 @@ label {
 .routine-admin-card,
 .workout-card,
 .record-detail-card,
-.list-card-row {
+.list-card-row,
+.member-item,
+.exercise-item,
+.history-card,
+.history-item {
   border: 1px solid var(--line);
   border-radius: 18px;
   padding: 16px;
   background: #fff;
 }
 
-.member-card {
+.member-card,
+.member-item {
   cursor: pointer;
 }
 
-.member-card.active {
+.member-card.active,
+.member-item.active {
   border-color: var(--primary);
   background: var(--primary-soft);
 }
@@ -456,14 +548,18 @@ label {
 .member-card-name,
 .record-detail-title,
 .list-card-title,
-.routine-title {
+.routine-title,
+.member-name,
+.exercise-name {
   font-size: 18px;
   font-weight: 800;
 }
 
 .member-card-goal,
 .member-card-sub,
-.record-meta {
+.record-meta,
+.member-goal,
+.member-session {
   font-size: 14px;
   color: var(--sub);
 }
@@ -490,6 +586,7 @@ label {
   background: linear-gradient(180deg, #ffffff 0%, #fafcff 100%);
 }
 
+/* tags / chips */
 .bodypart-wrap,
 .tag-row,
 .history-sets,
@@ -501,7 +598,8 @@ label {
 
 .part-btn,
 .tag,
-.mini-ex-item {
+.mini-ex-item,
+.set-box {
   border-radius: 999px;
   padding: 8px 12px;
   border: 1px solid var(--line);
@@ -520,7 +618,9 @@ label {
   cursor: pointer;
 }
 
-.set-card-wrap {
+/* set / workout */
+.set-card-wrap,
+.set-table {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -532,6 +632,20 @@ label {
   border-radius: 14px;
   padding: 12px;
   background: #f9fafb;
+}
+
+.set-head,
+.set-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.set-head {
+  font-size: 13px;
+  color: var(--sub);
+  font-weight: 700;
 }
 
 .feedback {
@@ -552,6 +666,7 @@ label {
   color: var(--warn-text);
 }
 
+/* routine / manual */
 .routine-day {
   font-size: 13px;
   color: var(--sub);
@@ -582,6 +697,7 @@ label {
   margin: 0 0 12px;
 }
 
+/* list rows */
 .list-card-row {
   display: flex;
   justify-content: space-between;
@@ -589,10 +705,58 @@ label {
   gap: 14px;
 }
 
-@media (max-width: 1100px) {
+/* main dashboard extra */
+.member-header {
+  margin-bottom: 8px;
+}
+
+.exercise-list,
+.history-list {
+  margin-top: 16px;
+}
+
+.history-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.history-item {
+  background: #f9fafb;
+}
+
+.tag-delete-btn {
+  border: none;
+  background: transparent;
+  color: var(--sub);
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+}
+
+.tag-delete-btn:hover {
+  color: var(--red-text);
+}
+
+/* responsive */
+@media (max-width: 1200px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: static;
+  }
+
+  .top-grid,
   .admin-grid,
   .grid-3 {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-menu {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -601,7 +765,8 @@ label {
   .grid-2,
   .summary-grid,
   .record-summary-grid,
-  .member-feedback-grid {
+  .member-feedback-grid,
+  .stat-grid {
     grid-template-columns: 1fr;
   }
 
@@ -609,11 +774,17 @@ label {
     flex-direction: column;
     align-items: flex-start;
   }
+
+  .set-head,
+  .set-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {
   .entry-shell,
-  .dashboard-shell {
+  .dashboard-shell,
+  .app-shell {
     padding-left: 14px;
     padding-right: 14px;
   }
@@ -624,7 +795,8 @@ label {
 
   .card,
   .entry-card,
-  .section-card {
+  .section-card,
+  .sidebar {
     padding: 18px;
   }
 
@@ -632,12 +804,24 @@ label {
     flex-direction: column;
   }
 
-  .tab-btn {
+  .tab-btn,
+  .menu-btn {
     flex: 1 1 auto;
   }
 
-  .list-card-row {
+  .list-card-row,
+  .member-card-top,
+  .record-card-top,
+  .member-header,
+  .workout-card-head,
+  .history-head,
+  .button-row,
+  .section-head {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .dashboard-menu {
+    grid-template-columns: 1fr;
   }
 }
