@@ -223,37 +223,16 @@ export default function App() {
   useEffect(() => {
     let mounted = true
 
-    const restoreAdminSession = async () => {
-      const { data } = await supabase.auth.getSession()
-      const sessionUser = data?.session?.user
-
-      if (!sessionUser) return false
-
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', sessionUser.id)
-        .maybeSingle()
-
-      if (profileError || !profileData || profileData.role !== 'admin') {
-        await supabase.auth.signOut()
-        return false
-      }
-
-      if (mounted) {
-        setAdminUser(sessionUser)
-        setAdminProfile(profileData)
-      }
-      return true
-    }
-
     const restoreMemberSession = () => {
       try {
         const raw = localStorage.getItem(MEMBER_SESSION_KEY)
         if (!raw) return false
 
         const parsed = JSON.parse(raw)
-        if (!parsed?.member || !parsed?.accessCode) return false
+        if (!parsed?.member || !parsed?.accessCode) {
+          localStorage.removeItem(MEMBER_SESSION_KEY)
+          return false
+        }
 
         if (memberIdFromUrl && parsed.member.id !== memberIdFromUrl) {
           localStorage.removeItem(MEMBER_SESSION_KEY)
@@ -270,46 +249,89 @@ export default function App() {
       }
     }
 
-    const init = async () => {
-      const adminRestored = await restoreAdminSession()
+    const restoreAdminSession = async () => {
+      try {
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession()
 
-      if (!adminRestored) {
-        restoreMemberSession()
+        if (sessionError) {
+          return false
+        }
+
+        const sessionUser = session?.user
+        if (!sessionUser) return false
+
+        const { data: profileData, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', sessionUser.id)
+          .maybeSingle()
+
+        if (profileError || !profileData || profileData.role !== 'admin') {
+          await supabase.auth.signOut()
+          return false
+        }
+
+        if (mounted) {
+          setAdminUser(sessionUser)
+          setAdminProfile(profileData)
+        }
+
+        return true
+      } catch {
+        return false
       }
+    }
 
-      if (mounted) {
-        setBooting(false)
+    const init = async () => {
+      try {
+        const adminRestored = await restoreAdminSession()
+
+        if (!adminRestored) {
+          restoreMemberSession()
+        }
+      } finally {
+        if (mounted) {
+          setBooting(false)
+        }
       }
     }
 
     init()
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (session?.user) {
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .maybeSingle()
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!mounted) return
 
-        if (profileData?.role === 'admin') {
-          if (mounted) {
+      if (session?.user) {
+        try {
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .maybeSingle()
+
+          if (profileData?.role === 'admin') {
             setAdminUser(session.user)
             setAdminProfile(profileData)
             setMemberSession(null)
           }
-        }
-      } else {
-        if (mounted) {
+        } catch {
           setAdminUser(null)
           setAdminProfile(null)
         }
+      } else {
+        setAdminUser(null)
+        setAdminProfile(null)
       }
     })
 
     return () => {
       mounted = false
-      authListener?.subscription?.unsubscribe()
+      subscription?.unsubscribe()
     }
   }, [memberIdFromUrl])
 
@@ -325,18 +347,17 @@ export default function App() {
     localStorage.setItem(MEMBER_SESSION_KEY, JSON.stringify(nextSession))
   }
 
-  const handleLogout = async () => {
+  const handleAdminLogout = async () => {
     await supabase.auth.signOut()
     setAdminUser(null)
     setAdminProfile(null)
-    localStorage.removeItem(MEMBER_SESSION_KEY)
-    setMemberSession(null)
     window.location.href = window.location.origin
   }
 
   const handleMemberLogout = () => {
     localStorage.removeItem(MEMBER_SESSION_KEY)
     setMemberSession(null)
+
     if (memberIdFromUrl) {
       window.location.href = `${window.location.origin}?member=${memberIdFromUrl}`
     } else {
@@ -361,7 +382,7 @@ export default function App() {
       <AdminDashboard
         user={adminUser}
         profile={adminProfile}
-        onLogout={handleLogout}
+        onLogout={handleAdminLogout}
       />
     )
   }
