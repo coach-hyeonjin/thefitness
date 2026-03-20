@@ -109,7 +109,7 @@ function createDietForm() {
   }
 }
 
-export default function MemberDashboard({ member, accessCode }) {
+export default function MemberDashboard({ member, accessCode, onLogout }) {
   const [activeTab, setActiveTab] = useState('내정보')
   const [workoutHistory, setWorkoutHistory] = useState([])
   const [expandedWorkoutIds, setExpandedWorkoutIds] = useState([])
@@ -604,7 +604,13 @@ export default function MemberDashboard({ member, accessCode }) {
             더피트니스 화정점 · {member.name}님
           </div>
         </div>
-        <div className="pill">입장코드: {accessCode}</div>
+
+        <div className="button-row">
+          <div className="pill">입장코드: {accessCode}</div>
+          <button className="secondary-btn" onClick={onLogout}>
+            로그아웃
+          </button>
+        </div>
       </div>
 
       <div className="tab-bar">
@@ -1308,4 +1314,3 @@ export default function MemberDashboard({ member, accessCode }) {
       </div>
     </div>
   )
-}
