@@ -25,19 +25,6 @@ function getKoreaDateString() {
   return korea.toISOString().slice(0, 10)
 }
 
-function createWorkoutItem() {
-  return {
-    id: `wi-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    category: '웨이트',
-    bodyPart: '등',
-    brand: '기본',
-    exerciseName: '',
-    sets: [{ setNo: 1, kg: 0, reps: 0 }],
-    goodPoint: '',
-    improvePoint: '',
-  }
-}
-
 function normalizeSetNumbers(sets = []) {
   return sets.map((setRow, index) => ({
     ...setRow,
@@ -96,6 +83,23 @@ function createDefaultRoutineRows() {
 }
 
 export default function AdminDashboard({ user, profile, onLogout }) {
+  const getDefaultBrandName = (brandRows = []) => {
+    if (!brandRows || brandRows.length === 0) return '기본'
+    if (brandRows.some((brand) => brand.name === '기본')) return '기본'
+    return brandRows[0]?.name || '기본'
+  }
+
+  const createWorkoutItem = (defaultBrand = '기본') => ({
+    id: `wi-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    category: '웨이트',
+    bodyPart: '등',
+    brand: defaultBrand,
+    exerciseName: '',
+    sets: [{ setNo: 1, kg: 0, reps: 0 }],
+    goodPoint: '',
+    improvePoint: '',
+  })
+
   const [activeTab, setActiveTab] = useState('회원')
   const [members, setMembers] = useState([])
   const [loadingMembers, setLoadingMembers] = useState(true)
@@ -153,7 +157,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
   const [workoutDraft, setWorkoutDraft] = useState({
     date: getKoreaDateString(),
     bodyParts: [],
-    items: [createWorkoutItem()],
+    items: [createWorkoutItem('기본')],
   })
 
   const [routineRows, setRoutineRows] = useState(createDefaultRoutineRows())
@@ -165,8 +169,39 @@ export default function AdminDashboard({ user, profile, onLogout }) {
   const [loadingManual, setLoadingManual] = useState(false)
   const [savingManual, setSavingManual] = useState(false)
 
+  const resetWorkoutDraft = (brandRows = brands) => {
+    setWorkoutDraft({
+      date: getKoreaDateString(),
+      bodyParts: [],
+      items: [createWorkoutItem(getDefaultBrandName(brandRows))],
+    })
+    setEditingWorkoutId(null)
+  }
+
+  const resetMemberForm = () => {
+    setMemberForm({
+      name: '',
+      goal: '',
+      total_sessions: 20,
+      used_sessions: 0,
+      start_date: '',
+      end_date: '',
+      memo: '',
+    })
+  }
+
+  const resetExerciseForm = (brandRows = brands) => {
+    setExerciseForm({
+      name: '',
+      bodyPart: '등',
+      category: '웨이트',
+      brand: getDefaultBrandName(brandRows),
+    })
+  }
+
   const loadMembers = async () => {
     setLoadingMembers(true)
+
     const { data, error } = await supabase
       .from('members')
       .select('*')
@@ -192,6 +227,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
 
   const loadBrands = async () => {
     setLoadingBrands(true)
+
     const { data, error } = await supabase
       .from('brands')
       .select('*')
@@ -204,12 +240,14 @@ export default function AdminDashboard({ user, profile, onLogout }) {
       return
     }
 
-    setBrands(data || [])
+    const rows = data || []
+    setBrands(rows)
     setLoadingBrands(false)
   }
 
   const loadExercises = async () => {
     setLoadingExercises(true)
+
     const { data, error } = await supabase
       .from('exercises')
       .select('*')
@@ -228,6 +266,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
 
   const loadManual = async () => {
     setLoadingManual(true)
+
     const { data, error } = await supabase
       .from('app_manuals')
       .select('*')
@@ -275,6 +314,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     }
 
     setLoadingRoutines(true)
+
     const { data, error } = await supabase
       .from('member_routines')
       .select('*')
@@ -342,17 +382,47 @@ export default function AdminDashboard({ user, profile, onLogout }) {
   useEffect(() => {
     loadWorkoutHistory(selectedMemberId)
     loadMemberRoutines(selectedMemberId)
+    resetWorkoutDraft()
   }, [selectedMemberId])
+
+  useEffect(() => {
+    const defaultBrand = getDefaultBrandName(brands)
+
+    setExerciseForm((prev) => ({
+      ...prev,
+      brand: prev.brand || defaultBrand,
+    }))
+
+    setEditExerciseForm((prev) => ({
+      ...prev,
+      brand: prev.brand || defaultBrand,
+    }))
+
+    setWorkoutDraft((prev) => ({
+      ...prev,
+      items:
+        prev.items?.length > 0
+          ? prev.items.map((item) => ({
+              ...item,
+              brand: item.brand || defaultBrand,
+            }))
+          : [createWorkoutItem(defaultBrand)],
+    }))
+  }, [brands])
 
   const selectedMember = useMemo(() => {
     return members.find((m) => m.id === selectedMemberId) || null
   }, [members, selectedMemberId])
 
-  const brandNames = useMemo(() => brands.map((b) => b.name), [brands])
+  const brandNames = useMemo(() => {
+    if (brands.length === 0) return ['기본']
+    return brands.map((b) => b.name)
+  }, [brands])
 
   const filteredExercises = useMemo(() => {
     const q = exerciseSearch.trim().toLowerCase()
     if (!q) return exercises
+
     return exercises.filter((e) =>
       [e.name, e.body_part, e.category, e.brand_name].join(' ').toLowerCase().includes(q)
     )
@@ -377,16 +447,19 @@ export default function AdminDashboard({ user, profile, onLogout }) {
   }
 
   const addMember = async () => {
-    if (!memberForm.name.trim()) return
+    if (!memberForm.name.trim()) {
+      alert('회원 이름을 입력해 주세요.')
+      return
+    }
 
     const accessCode = makeAccessCode()
 
     const { error } = await supabase.from('members').insert([
       {
         teacher_id: user.id,
-        name: memberForm.name,
+        name: memberForm.name.trim(),
         goal: memberForm.goal,
-        total_sessions: Number(memberForm.total_sessions),
+        total_sessions: Number(memberForm.total_sessions) || 0,
         used_sessions: 0,
         start_date: memberForm.start_date || null,
         end_date: memberForm.end_date || null,
@@ -400,16 +473,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
       return
     }
 
-    setMemberForm({
-      name: '',
-      goal: '',
-      total_sessions: 20,
-      used_sessions: 0,
-      start_date: '',
-      end_date: '',
-      memo: '',
-    })
-
+    resetMemberForm()
     await loadMembers()
   }
 
@@ -447,9 +511,9 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     const { error } = await supabase
       .from('members')
       .update({
-        name: editMemberForm.name,
+        name: editMemberForm.name.trim(),
         goal: editMemberForm.goal,
-        total_sessions: Number(editMemberForm.total_sessions),
+        total_sessions: Number(editMemberForm.total_sessions) || 0,
         start_date: editMemberForm.start_date || null,
         end_date: editMemberForm.end_date || null,
         memo: editMemberForm.memo,
@@ -482,12 +546,23 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     }
 
     if (selectedMemberId === memberId) setSelectedMemberId('')
+    if (editMemberId === memberId) closeMemberEdit()
+
     await loadMembers()
   }
 
   const addBrand = async () => {
     const value = brandForm.trim()
-    if (!value) return
+    if (!value) {
+      alert('브랜드 이름을 입력해 주세요.')
+      return
+    }
+
+    const duplicate = brands.some((brand) => brand.name === value)
+    if (duplicate) {
+      alert('이미 등록된 브랜드입니다.')
+      return
+    }
 
     const { error } = await supabase.from('brands').insert([
       { name: value, sort_order: brands.length + 1 },
@@ -515,6 +590,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
 
   const updateBrand = async () => {
     const newBrand = editBrandForm.name.trim()
+
     if (!editBrandId || !newBrand) {
       alert('브랜드 이름을 입력해 주세요.')
       return
@@ -522,6 +598,12 @@ export default function AdminDashboard({ user, profile, onLogout }) {
 
     const oldBrand = brands.find((b) => b.id === editBrandId)
     if (!oldBrand) return
+
+    const duplicate = brands.some((brand) => brand.id !== editBrandId && brand.name === newBrand)
+    if (duplicate) {
+      alert('같은 브랜드명이 이미 있습니다.')
+      return
+    }
 
     const { error } = await supabase
       .from('brands')
@@ -582,14 +664,30 @@ export default function AdminDashboard({ user, profile, onLogout }) {
   }
 
   const addExercise = async () => {
-    if (!exerciseForm.name.trim()) return
+    if (!exerciseForm.name.trim()) {
+      alert('운동명을 입력해 주세요.')
+      return
+    }
+
+    const duplicate = exercises.some(
+      (exercise) =>
+        exercise.name === exerciseForm.name.trim() &&
+        exercise.body_part === exerciseForm.bodyPart &&
+        exercise.category === exerciseForm.category &&
+        exercise.brand_name === (exerciseForm.brand || getDefaultBrandName(brands))
+    )
+
+    if (duplicate) {
+      alert('같은 조건의 운동이 이미 있습니다.')
+      return
+    }
 
     const { error } = await supabase.from('exercises').insert([
       {
         name: exerciseForm.name.trim(),
         body_part: exerciseForm.bodyPart,
         category: exerciseForm.category,
-        brand_name: exerciseForm.brand || '기본',
+        brand_name: exerciseForm.brand || getDefaultBrandName(brands),
         sort_order: exercises.length + 1,
       },
     ])
@@ -599,13 +697,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
       return
     }
 
-    setExerciseForm({
-      name: '',
-      bodyPart: '등',
-      category: '웨이트',
-      brand: '기본',
-    })
-
+    resetExerciseForm()
     await loadExercises()
   }
 
@@ -615,7 +707,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
       name: exercise.name || '',
       bodyPart: exercise.body_part || '등',
       category: exercise.category || '웨이트',
-      brand: exercise.brand_name || '기본',
+      brand: exercise.brand_name || getDefaultBrandName(brands),
     })
     setActiveTab('운동DB')
   }
@@ -626,7 +718,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
       name: '',
       bodyPart: '등',
       category: '웨이트',
-      brand: '기본',
+      brand: getDefaultBrandName(brands),
     })
   }
 
@@ -636,13 +728,27 @@ export default function AdminDashboard({ user, profile, onLogout }) {
       return
     }
 
+    const duplicate = exercises.some(
+      (exercise) =>
+        exercise.id !== editExerciseId &&
+        exercise.name === editExerciseForm.name.trim() &&
+        exercise.body_part === editExerciseForm.bodyPart &&
+        exercise.category === editExerciseForm.category &&
+        exercise.brand_name === (editExerciseForm.brand || getDefaultBrandName(brands))
+    )
+
+    if (duplicate) {
+      alert('같은 조건의 운동이 이미 있습니다.')
+      return
+    }
+
     const { error } = await supabase
       .from('exercises')
       .update({
         name: editExerciseForm.name.trim(),
         body_part: editExerciseForm.bodyPart,
         category: editExerciseForm.category,
-        brand_name: editExerciseForm.brand || '기본',
+        brand_name: editExerciseForm.brand || getDefaultBrandName(brands),
       })
       .eq('id', editExerciseId)
 
@@ -666,6 +772,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     }
 
     await loadExercises()
+
     if (editExerciseId === exerciseId) closeExerciseEdit()
   }
 
@@ -681,14 +788,17 @@ export default function AdminDashboard({ user, profile, onLogout }) {
   const addWorkoutItem = () => {
     setWorkoutDraft((prev) => ({
       ...prev,
-      items: [...prev.items, createWorkoutItem()],
+      items: [...prev.items, createWorkoutItem(getDefaultBrandName(brands))],
     }))
   }
 
   const removeWorkoutItem = (index) => {
     setWorkoutDraft((prev) => ({
       ...prev,
-      items: prev.items.filter((_, i) => i !== index),
+      items:
+        prev.items.length <= 1
+          ? prev.items
+          : prev.items.filter((_, i) => i !== index),
     }))
   }
 
@@ -733,7 +843,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
           ? {
               ...item,
               sets: item.sets.map((setRow, j) =>
-                j === setIndex ? { ...setRow, [key]: Number(value) } : setRow
+                j === setIndex ? { ...setRow, [key]: Number(value) || 0 } : setRow
               ),
             }
           : item
@@ -802,8 +912,8 @@ export default function AdminDashboard({ user, profile, onLogout }) {
         brand: item.brand,
         exercise_name: item.exerciseName,
         set_no: index + 1,
-        kg: Number(setRow.kg),
-        reps: Number(setRow.reps),
+        kg: Number(setRow.kg) || 0,
+        reps: Number(setRow.reps) || 0,
         good_point: item.goodPoint,
         improve_point: item.improvePoint,
       }))
@@ -821,12 +931,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     await syncMemberSessionCount(selectedMemberId)
     await loadMembers()
     await loadWorkoutHistory(selectedMemberId)
-
-    setWorkoutDraft({
-      date: getKoreaDateString(),
-      bodyParts: [],
-      items: [createWorkoutItem()],
-    })
+    resetWorkoutDraft()
   }
 
   const editWorkoutRecord = (workout) => {
@@ -866,7 +971,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     setWorkoutDraft({
       date: workout.workout_date,
       bodyParts: workout.body_parts || [],
-      items: grouped.length > 0 ? grouped : [createWorkoutItem()],
+      items: grouped.length > 0 ? grouped : [createWorkoutItem(getDefaultBrandName(brands))],
     })
 
     setEditingWorkoutId(workout.id)
@@ -887,6 +992,10 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     await syncMemberSessionCount(selectedMemberId)
     await loadMembers()
     await loadWorkoutHistory(selectedMemberId)
+
+    if (editingWorkoutId === workoutId) {
+      resetWorkoutDraft()
+    }
   }
 
   const updateWorkoutRecord = async () => {
@@ -994,9 +1103,13 @@ export default function AdminDashboard({ user, profile, onLogout }) {
       <div className="dashboard-topbar">
         <div>
           <h2 style={{ margin: 0 }}>관리자 대시보드</h2>
-          <div className="muted">로그인: {user.email} · {profile.teacher_name || profile.name}</div>
+          <div className="muted">
+            로그인: {user.email} · {profile.teacher_name || profile.name}
+          </div>
         </div>
-        <button className="secondary-btn" onClick={onLogout}>로그아웃</button>
+        <button className="secondary-btn" onClick={onLogout}>
+          로그아웃
+        </button>
       </div>
 
       <div className="tab-bar">
@@ -1021,7 +1134,9 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                   <h2>{editMemberId ? '회원 정보 수정' : '새 회원 등록'}</h2>
                 </div>
                 {editMemberId && (
-                  <button className="secondary-btn" onClick={closeMemberEdit}>수정 취소</button>
+                  <button className="secondary-btn" onClick={closeMemberEdit}>
+                    수정 취소
+                  </button>
                 )}
               </div>
 
@@ -1063,7 +1178,9 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                     value={memberForm.memo}
                     onChange={(e) => setMemberForm({ ...memberForm, memo: e.target.value })}
                   />
-                  <button className="primary-btn" onClick={addMember}>회원 추가</button>
+                  <button className="primary-btn" onClick={addMember}>
+                    회원 추가
+                  </button>
                 </div>
               ) : (
                 <div className="form-block">
@@ -1111,7 +1228,9 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                     value={editMemberForm.memo}
                     onChange={(e) => setEditMemberForm({ ...editMemberForm, memo: e.target.value })}
                   />
-                  <button className="primary-btn" onClick={updateMember}>회원 정보 저장</button>
+                  <button className="primary-btn" onClick={updateMember}>
+                    회원 정보 저장
+                  </button>
                 </div>
               )}
             </section>
@@ -1185,7 +1304,9 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                     <div className="section-label">선택 회원 정보</div>
                     <h2>{selectedMember.name}</h2>
                   </div>
-                  <div className="pill">남은 세션 {Math.max(selectedMember.total_sessions - selectedMember.used_sessions, 0)}회</div>
+                  <div className="pill">
+                    남은 세션 {Math.max(selectedMember.total_sessions - selectedMember.used_sessions, 0)}회
+                  </div>
                 </div>
 
                 <div className="summary-grid">
@@ -1195,7 +1316,9 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                   </div>
                   <div className="summary-box">
                     <div className="summary-label">세션</div>
-                    <div className="summary-value">{selectedMember.used_sessions} / {selectedMember.total_sessions}회</div>
+                    <div className="summary-value">
+                      {selectedMember.used_sessions} / {selectedMember.total_sessions}회
+                    </div>
                   </div>
                   <div className="summary-box">
                     <div className="summary-label">시작일</div>
@@ -1221,9 +1344,14 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                 <div className="member-link-box">
                   <div className="memo-title">회원 링크 / 코드</div>
                   <div className="link-line">링크: {`${window.location.origin}?member=${selectedMember.id}`}</div>
-                  <div className="link-line">코드: <strong>{selectedMember.access_code || '-'}</strong></div>
+                  <div className="link-line">
+                    코드: <strong>{selectedMember.access_code || '-'}</strong>
+                  </div>
                   <div className="button-row">
-                    <button className="secondary-btn" onClick={() => copyText(`${window.location.origin}?member=${selectedMember.id}`)}>
+                    <button
+                      className="secondary-btn"
+                      onClick={() => copyText(`${window.location.origin}?member=${selectedMember.id}`)}
+                    >
                       링크 복사
                     </button>
                     <button className="secondary-btn" onClick={() => copyText(selectedMember.access_code || '')}>
@@ -1286,7 +1414,9 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                   <div className="section-label">대상 회원</div>
                   <h2>{selectedMember.name}</h2>
                 </div>
-                <div className="pill">남은 세션 {Math.max(selectedMember.total_sessions - selectedMember.used_sessions, 0)}회</div>
+                <div className="pill">
+                  남은 세션 {Math.max(selectedMember.total_sessions - selectedMember.used_sessions, 0)}회
+                </div>
               </div>
 
               <div className="summary-grid">
@@ -1296,7 +1426,9 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                 </div>
                 <div className="summary-box">
                   <div className="summary-label">진행 세션</div>
-                  <div className="summary-value">{selectedMember.used_sessions} / {selectedMember.total_sessions}</div>
+                  <div className="summary-value">
+                    {selectedMember.used_sessions} / {selectedMember.total_sessions}
+                  </div>
                 </div>
                 <div className="summary-box">
                   <div className="summary-label">이번달 PT</div>
@@ -1351,7 +1483,9 @@ export default function AdminDashboard({ user, profile, onLogout }) {
 
                   <div className="section-head" style={{ marginTop: 18 }}>
                     <h3 style={{ margin: 0 }}>운동 목록</h3>
-                    <button className="secondary-btn" onClick={addWorkoutItem}>+ 운동 추가</button>
+                    <button className="secondary-btn" onClick={addWorkoutItem}>
+                      + 운동 추가
+                    </button>
                   </div>
 
                   {workoutDraft.items.map((item, itemIndex) => (
@@ -1359,7 +1493,9 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                       <div className="workout-card-head">
                         <strong>운동 {itemIndex + 1}</strong>
                         {workoutDraft.items.length > 1 && (
-                          <button className="danger-btn" onClick={() => removeWorkoutItem(itemIndex)}>삭제</button>
+                          <button className="danger-btn" onClick={() => removeWorkoutItem(itemIndex)}>
+                            삭제
+                          </button>
                         )}
                       </div>
 
@@ -1368,21 +1504,27 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                           value={item.category}
                           onChange={(e) => updateWorkoutItem(itemIndex, { category: e.target.value })}
                         >
-                          {categoryOptions.map((o) => <option key={o}>{o}</option>)}
+                          {categoryOptions.map((o) => (
+                            <option key={o}>{o}</option>
+                          ))}
                         </select>
 
                         <select
                           value={item.bodyPart}
                           onChange={(e) => updateWorkoutItem(itemIndex, { bodyPart: e.target.value })}
                         >
-                          {bodyPartOptions.map((o) => <option key={o}>{o}</option>)}
+                          {bodyPartOptions.map((o) => (
+                            <option key={o}>{o}</option>
+                          ))}
                         </select>
 
                         <select
                           value={item.brand}
                           onChange={(e) => updateWorkoutItem(itemIndex, { brand: e.target.value })}
                         >
-                          {brandNames.map((o) => <option key={o}>{o}</option>)}
+                          {brandNames.map((o) => (
+                            <option key={o}>{o}</option>
+                          ))}
                         </select>
                       </div>
 
@@ -1472,23 +1614,17 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                   <div className="save-row">
                     {editingWorkoutId ? (
                       <>
-                        <button className="primary-btn" onClick={updateWorkoutRecord}>기록 수정 저장</button>
-                        <button
-                          className="secondary-btn"
-                          onClick={() => {
-                            setEditingWorkoutId(null)
-                            setWorkoutDraft({
-                              date: getKoreaDateString(),
-                              bodyParts: [],
-                              items: [createWorkoutItem()],
-                            })
-                          }}
-                        >
+                        <button className="primary-btn" onClick={updateWorkoutRecord}>
+                          기록 수정 저장
+                        </button>
+                        <button className="secondary-btn" onClick={() => resetWorkoutDraft()}>
                           수정 취소
                         </button>
                       </>
                     ) : (
-                      <button className="primary-btn" onClick={saveWorkoutRecord}>기록 저장</button>
+                      <button className="primary-btn" onClick={saveWorkoutRecord}>
+                        기록 저장
+                      </button>
                     )}
                   </div>
                 </>
@@ -1521,14 +1657,12 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                           <div>
                             <div className="record-date">{workout.workout_date}</div>
                             <div className="record-meta">
-                              구분: {(workout.workout_type || 'pt') === 'self' ? '개인운동' : 'PT'} · 부위: {(workout.body_parts || []).join(', ') || '-'}
+                              구분: {(workout.workout_type || 'pt') === 'self' ? '개인운동' : 'PT'} · 부위:{' '}
+                              {(workout.body_parts || []).join(', ') || '-'}
                             </div>
                           </div>
                           <div className="button-row">
-                            <button
-                              className="secondary-btn"
-                              onClick={() => toggleWorkoutDetail(workout.id)}
-                            >
+                            <button className="secondary-btn" onClick={() => toggleWorkoutDetail(workout.id)}>
                               {isExpanded ? '간추려보기' : '상세히 보기'}
                             </button>
                             <button className="secondary-btn" onClick={() => editWorkoutRecord(workout)}>
@@ -1616,8 +1750,12 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                     onChange={(e) => setEditBrandForm({ name: e.target.value })}
                   />
                   <div className="button-row">
-                    <button className="primary-btn" onClick={updateBrand}>브랜드 저장</button>
-                    <button className="secondary-btn" onClick={closeBrandEdit}>취소</button>
+                    <button className="primary-btn" onClick={updateBrand}>
+                      브랜드 저장
+                    </button>
+                    <button className="secondary-btn" onClick={closeBrandEdit}>
+                      취소
+                    </button>
                   </div>
                 </div>
               )}
@@ -1628,7 +1766,9 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                   value={brandForm}
                   onChange={(e) => setBrandForm(e.target.value)}
                 />
-                <button className="secondary-btn" onClick={addBrand}>브랜드 추가</button>
+                <button className="secondary-btn" onClick={addBrand}>
+                  브랜드 추가
+                </button>
               </div>
 
               <div className="list-card-group">
@@ -1639,8 +1779,12 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                     <div className="list-card-row" key={brand.id}>
                       <div className="list-card-title">{brand.name}</div>
                       <div className="button-row">
-                        <button className="secondary-btn" onClick={() => openBrandEdit(brand)}>수정</button>
-                        <button className="danger-btn" onClick={() => deleteBrand(brand)}>삭제</button>
+                        <button className="secondary-btn" onClick={() => openBrandEdit(brand)}>
+                          수정
+                        </button>
+                        <button className="danger-btn" onClick={() => deleteBrand(brand)}>
+                          삭제
+                        </button>
                       </div>
                     </div>
                   ))
@@ -1669,25 +1813,35 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                       value={editExerciseForm.bodyPart}
                       onChange={(e) => setEditExerciseForm({ ...editExerciseForm, bodyPart: e.target.value })}
                     >
-                      {bodyPartOptions.map((o) => <option key={o}>{o}</option>)}
+                      {bodyPartOptions.map((o) => (
+                        <option key={o}>{o}</option>
+                      ))}
                     </select>
                     <select
                       value={editExerciseForm.category}
                       onChange={(e) => setEditExerciseForm({ ...editExerciseForm, category: e.target.value })}
                     >
-                      {categoryOptions.map((o) => <option key={o}>{o}</option>)}
+                      {categoryOptions.map((o) => (
+                        <option key={o}>{o}</option>
+                      ))}
                     </select>
                     <select
                       value={editExerciseForm.brand}
                       onChange={(e) => setEditExerciseForm({ ...editExerciseForm, brand: e.target.value })}
                     >
-                      {brandNames.map((o) => <option key={o}>{o}</option>)}
+                      {brandNames.map((o) => (
+                        <option key={o}>{o}</option>
+                      ))}
                     </select>
                   </div>
 
                   <div className="button-row">
-                    <button className="primary-btn" onClick={updateExercise}>운동 저장</button>
-                    <button className="secondary-btn" onClick={closeExerciseEdit}>취소</button>
+                    <button className="primary-btn" onClick={updateExercise}>
+                      운동 저장
+                    </button>
+                    <button className="secondary-btn" onClick={closeExerciseEdit}>
+                      취소
+                    </button>
                   </div>
                 </div>
               )}
@@ -1703,22 +1857,30 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                     value={exerciseForm.bodyPart}
                     onChange={(e) => setExerciseForm({ ...exerciseForm, bodyPart: e.target.value })}
                   >
-                    {bodyPartOptions.map((o) => <option key={o}>{o}</option>)}
+                    {bodyPartOptions.map((o) => (
+                      <option key={o}>{o}</option>
+                    ))}
                   </select>
                   <select
                     value={exerciseForm.category}
                     onChange={(e) => setExerciseForm({ ...exerciseForm, category: e.target.value })}
                   >
-                    {categoryOptions.map((o) => <option key={o}>{o}</option>)}
+                    {categoryOptions.map((o) => (
+                      <option key={o}>{o}</option>
+                    ))}
                   </select>
                   <select
                     value={exerciseForm.brand}
                     onChange={(e) => setExerciseForm({ ...exerciseForm, brand: e.target.value })}
                   >
-                    {brandNames.map((o) => <option key={o}>{o}</option>)}
+                    {brandNames.map((o) => (
+                      <option key={o}>{o}</option>
+                    ))}
                   </select>
                 </div>
-                <button className="secondary-btn" onClick={addExercise}>운동 추가</button>
+                <button className="secondary-btn" onClick={addExercise}>
+                  운동 추가
+                </button>
               </div>
 
               <input
@@ -1743,8 +1905,12 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                       </div>
 
                       <div className="button-row">
-                        <button className="secondary-btn" onClick={() => openExerciseEdit(exercise)}>수정</button>
-                        <button className="danger-btn" onClick={() => deleteExercise(exercise.id)}>삭제</button>
+                        <button className="secondary-btn" onClick={() => openExerciseEdit(exercise)}>
+                          수정
+                        </button>
+                        <button className="danger-btn" onClick={() => deleteExercise(exercise.id)}>
+                          삭제
+                        </button>
                       </div>
                     </div>
                   ))
@@ -1784,15 +1950,17 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                   </div>
                   <div className="summary-box">
                     <div className="summary-label">남은 세션</div>
-                    <div className="summary-value">{Math.max(selectedMember.total_sessions - selectedMember.used_sessions, 0)}회</div>
+                    <div className="summary-value">
+                      {Math.max(selectedMember.total_sessions - selectedMember.used_sessions, 0)}회
+                    </div>
                   </div>
                 </div>
 
                 <div className="memo-box">
                   <div className="memo-title">이번달 요약</div>
                   <div>
-                    이번달 총 {currentMonthTotal}번 운동했고,
-                    그중 PT는 {currentMonthPtCount}번, 개인운동은 {currentMonthSelfCount}번입니다.
+                    이번달 총 {currentMonthTotal}번 운동했고, 그중 PT는 {currentMonthPtCount}번,
+                    개인운동은 {currentMonthSelfCount}번입니다.
                   </div>
                 </div>
               </>
