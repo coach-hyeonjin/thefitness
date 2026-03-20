@@ -159,6 +159,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
   const [dietDateFilter, setDietDateFilter] = useState(getKoreaDateString().slice(0, 7))
   const [dietFeedbackDrafts, setDietFeedbackDrafts] = useState({})
   const [savingDietFeedbackId, setSavingDietFeedbackId] = useState('')
+  const [expandedDietIds, setExpandedDietIds] = useState([])
 
   const [memberForm, setMemberForm] = useState({
     name: '',
@@ -372,6 +373,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
       const endDate = new Date(`${monthFilter}-01T00:00:00`)
       endDate.setMonth(endDate.getMonth() + 1)
       const end = endDate.toISOString().slice(0, 10)
+
       query = query.gte('date', start).lt('date', end)
     }
 
@@ -469,13 +471,14 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     loadMemberRoutines(selectedMemberId)
     loadDietLogs(selectedMemberId, dietDateFilter)
     resetWorkoutDraft()
+    setExpandedDietIds([])
   }, [selectedMemberId])
 
   useEffect(() => {
     if (activeTab === '식단') {
       loadDietLogs(selectedMemberId, dietDateFilter)
     }
-  }, [dietDateFilter])
+  }, [dietDateFilter, activeTab])
 
   useEffect(() => {
     const defaultBrand = getDefaultBrandName(brands)
@@ -556,6 +559,14 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     )
   }
 
+  const toggleDietDetail = (dietId) => {
+    setExpandedDietIds((prev) =>
+      prev.includes(dietId)
+        ? prev.filter((id) => id !== dietId)
+        : [...prev, dietId]
+    )
+  }
+
   const addMember = async () => {
     if (!memberForm.name.trim()) {
       alert('회원 이름을 입력해 주세요.')
@@ -587,15 +598,15 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     await loadMembers()
   }
 
-  const openMemberEdit = (member) => {
-    setEditMemberId(member.id)
+  const openMemberEdit = (memberRow) => {
+    setEditMemberId(memberRow.id)
     setEditMemberForm({
-      name: member.name || '',
-      goal: member.goal || '',
-      total_sessions: member.total_sessions || 20,
-      start_date: member.start_date || '',
-      end_date: member.end_date || '',
-      memo: member.memo || '',
+      name: memberRow.name || '',
+      goal: memberRow.goal || '',
+      total_sessions: memberRow.total_sessions || 20,
+      start_date: memberRow.start_date || '',
+      end_date: memberRow.end_date || '',
+      memo: memberRow.memo || '',
     })
     setActiveTab('회원')
   }
@@ -1198,7 +1209,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
 
   const updateRoutineRow = (dayKey, key, value) => {
     setRoutineRows((prev) =>
-      prev.map((row) => (row.dayKey === dayKey ? { ...row, [key]: value } : row))
+      prev.map((row) => (row.dayKey === dayKey ? { ...row, [key]: value } : row)),
     )
   }
 
@@ -1268,7 +1279,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
           updated_at: new Date().toISOString(),
         },
       ],
-      { onConflict: 'manual_key' }
+      { onConflict: 'manual_key' },
     )
 
     if (error) {
@@ -1303,6 +1314,20 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     await loadDietLogs(selectedMemberId, dietDateFilter)
     setSavingDietFeedbackId('')
     alert('식단 피드백 저장 완료')
+  }
+
+  const deleteDietLog = async (dietLogId) => {
+    if (!window.confirm('이 식단 기록을 삭제할까요?')) return
+
+    const { error } = await supabase.from('diet_logs').delete().eq('id', dietLogId)
+
+    if (error) {
+      alert(`식단 삭제 오류: ${error.message}`)
+      return
+    }
+
+    alert('식단 기록 삭제 완료')
+    await loadDietLogs(selectedMemberId, dietDateFilter)
   }
 
   return (
@@ -1456,24 +1481,24 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                 ) : members.length === 0 ? (
                   <div className="muted">등록된 회원이 없습니다.</div>
                 ) : (
-                  members.map((member) => (
+                  members.map((memberRow) => (
                     <div
-                      key={member.id}
-                      className={`member-card ${selectedMemberId === member.id ? 'active' : ''}`}
-                      onClick={() => setSelectedMemberId(member.id)}
+                      key={memberRow.id}
+                      className={`member-card ${selectedMemberId === memberRow.id ? 'active' : ''}`}
+                      onClick={() => setSelectedMemberId(memberRow.id)}
                     >
                       <div className="member-card-top">
                         <div>
-                          <div className="member-card-name">{member.name}</div>
-                          <div className="member-card-goal">{member.goal || '목표 미입력'}</div>
+                          <div className="member-card-name">{memberRow.name}</div>
+                          <div className="member-card-goal">{memberRow.goal || '목표 미입력'}</div>
                         </div>
                         <div className="member-card-session">
-                          {member.used_sessions} / {member.total_sessions}
+                          {memberRow.used_sessions} / {memberRow.total_sessions}
                         </div>
                       </div>
 
                       <div className="member-card-sub">
-                        남은 세션 {Math.max(member.total_sessions - member.used_sessions, 0)}회
+                        남은 세션 {Math.max(memberRow.total_sessions - memberRow.used_sessions, 0)}회
                       </div>
 
                       <div className="button-row" style={{ marginTop: 12 }}>
@@ -1481,7 +1506,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                           className="secondary-btn"
                           onClick={(e) => {
                             e.stopPropagation()
-                            openMemberEdit(member)
+                            openMemberEdit(memberRow)
                           }}
                         >
                           회원 수정
@@ -1490,7 +1515,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                           className="danger-btn"
                           onClick={(e) => {
                             e.stopPropagation()
-                            deleteMember(member.id)
+                            deleteMember(memberRow.id)
                           }}
                         >
                           회원 삭제
@@ -2206,75 +2231,105 @@ export default function AdminDashboard({ user, profile, onLogout }) {
                   <div className="muted" style={{ marginTop: 16 }}>해당 기간 식단 기록이 없습니다.</div>
                 ) : (
                   <div className="record-list" style={{ marginTop: 16 }}>
-                    {dietLogs.map((log) => (
-                      <div className="record-card" key={log.id}>
-                        <div className="record-card-top">
-                          <div>
-                            <div className="record-date">{log.date}</div>
-                            <div className="record-meta">
-                              {log.meal_type || '-'} · {log.meal_time || '시간 미입력'}
+                    {dietLogs.map((log) => {
+                      const isExpanded = expandedDietIds.includes(log.id)
+                      return (
+                        <div className="record-card" key={log.id}>
+                          <div className="record-card-top">
+                            <div>
+                              <div className="record-date">{log.date}</div>
+                              <div className="record-meta">
+                                {log.meal_type || '-'} · {log.meal_time || '시간 미입력'} · {log.food_name || '-'}
+                              </div>
                             </div>
-                          </div>
-                          <div className="pill">배고픔 {log.hunger_level ?? '-'} / 10</div>
-                        </div>
 
-                        <div className="summary-grid" style={{ marginTop: 12 }}>
-                          <div className="summary-box">
-                            <div className="summary-label">음식명</div>
-                            <div className="summary-value" style={{ fontSize: 16 }}>
-                              {log.food_name || '-'}
+                            <div className="button-row">
+                              <div className="pill">배고픔 {log.hunger_level ?? '-'} / 10</div>
+                              <button className="secondary-btn" onClick={() => toggleDietDetail(log.id)}>
+                                {isExpanded ? '간추려보기' : '상세히 보기'}
+                              </button>
                             </div>
                           </div>
-                          <div className="summary-box">
-                            <div className="summary-label">양</div>
-                            <div className="summary-value" style={{ fontSize: 16 }}>
-                              {log.amount || '-'}
-                            </div>
-                          </div>
-                          <div className="summary-box">
-                            <div className="summary-label">탄수</div>
-                            <div className="summary-value">{log.carbs ?? 0}g</div>
-                          </div>
-                          <div className="summary-box">
-                            <div className="summary-label">단백질</div>
-                            <div className="summary-value">{log.protein ?? 0}g</div>
-                          </div>
-                          <div className="summary-box">
-                            <div className="summary-label">지방</div>
-                            <div className="summary-value">{log.fat ?? 0}g</div>
-                          </div>
-                          <div className="summary-box">
-                            <div className="summary-label">회원 메모</div>
-                            <div className="summary-value" style={{ fontSize: 16 }}>
-                              {log.memo || '-'}
-                            </div>
-                          </div>
-                        </div>
 
-                        <div className="form-block" style={{ marginTop: 14 }}>
-                          <label>관리자 피드백</label>
-                          <textarea
-                            value={dietFeedbackDrafts[log.id] || ''}
-                            onChange={(e) =>
-                              setDietFeedbackDrafts((prev) => ({
-                                ...prev,
-                                [log.id]: e.target.value,
-                              }))
-                            }
-                            placeholder="식단 피드백 입력"
-                          />
-                          <div className="button-row">
-                            <button
-                              className="primary-btn"
-                              onClick={() => saveDietFeedback(log.id)}
-                              disabled={savingDietFeedbackId === log.id}
-                            >
-                              {savingDietFeedbackId === log.id ? '저장 중...' : '피드백 저장'}
-                            </button>
+                          <div className="record-summary-grid">
+                            <div className="record-summary-box">
+                              <div className="summary-label">탄수</div>
+                              <div className="summary-value">{log.carbs ?? 0}g</div>
+                            </div>
+                            <div className="record-summary-box">
+                              <div className="summary-label">단백질</div>
+                              <div className="summary-value">{log.protein ?? 0}g</div>
+                            </div>
                           </div>
+
+                          {!isExpanded ? null : (
+                            <>
+                              <div className="summary-grid" style={{ marginTop: 12 }}>
+                                <div className="summary-box">
+                                  <div className="summary-label">음식명</div>
+                                  <div className="summary-value" style={{ fontSize: 16 }}>
+                                    {log.food_name || '-'}
+                                  </div>
+                                </div>
+                                <div className="summary-box">
+                                  <div className="summary-label">양</div>
+                                  <div className="summary-value" style={{ fontSize: 16 }}>
+                                    {log.amount || '-'}
+                                  </div>
+                                </div>
+                                <div className="summary-box">
+                                  <div className="summary-label">탄수</div>
+                                  <div className="summary-value">{log.carbs ?? 0}g</div>
+                                </div>
+                                <div className="summary-box">
+                                  <div className="summary-label">단백질</div>
+                                  <div className="summary-value">{log.protein ?? 0}g</div>
+                                </div>
+                                <div className="summary-box">
+                                  <div className="summary-label">지방</div>
+                                  <div className="summary-value">{log.fat ?? 0}g</div>
+                                </div>
+                                <div className="summary-box">
+                                  <div className="summary-label">회원 메모</div>
+                                  <div className="summary-value" style={{ fontSize: 16 }}>
+                                    {log.memo || '-'}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="form-block" style={{ marginTop: 14 }}>
+                                <label>관리자 피드백</label>
+                                <textarea
+                                  value={dietFeedbackDrafts[log.id] || ''}
+                                  onChange={(e) =>
+                                    setDietFeedbackDrafts((prev) => ({
+                                      ...prev,
+                                      [log.id]: e.target.value,
+                                    }))
+                                  }
+                                  placeholder="식단 피드백 입력"
+                                />
+                                <div className="button-row">
+                                  <button
+                                    className="primary-btn"
+                                    onClick={() => saveDietFeedback(log.id)}
+                                    disabled={savingDietFeedbackId === log.id}
+                                  >
+                                    {savingDietFeedbackId === log.id ? '저장 중...' : '피드백 저장'}
+                                  </button>
+                                  <button
+                                    className="danger-btn"
+                                    onClick={() => deleteDietLog(log.id)}
+                                  >
+                                    삭제
+                                  </button>
+                                </div>
+                              </div>
+                            </>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </>
