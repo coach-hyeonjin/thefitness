@@ -4,7 +4,16 @@ import './style.css'
 
 const memberTabs = ['내정보', '저장된 운동기록', '개인운동입력', '루틴', '사용방법']
 const bodyPartOptions = ['가슴', '어깨', '팔', '등', '하체', '스트레칭&재활', '유산소']
-const categoryOptions = ['웨이트', '유산소', '스트레칭&재활']
+const equipmentTypeOptions = [
+  '플레이트머신',
+  '핀머신',
+  '프리웨이트',
+  '기타웨이트',
+  '랙',
+  '유산소기구',
+  '소도구',
+  '스트레칭&재활',
+]
 
 function groupWorkoutItems(items = []) {
   const map = new Map()
@@ -24,7 +33,7 @@ function groupWorkoutItems(items = []) {
         id: key,
         exerciseName: row.exercise_name || '',
         bodyPart: row.body_part || '',
-        category: row.category || '',
+        equipmentType: row.category || '',
         brand: row.brand || '',
         goodPoint: row.good_point || '',
         improvePoint: row.improve_point || '',
@@ -67,7 +76,7 @@ function summarizeWorkout(workout) {
 function createSelfWorkoutItem(defaultBrand = '기본') {
   return {
     id: `self-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    category: '웨이트',
+    equipmentType: '핀머신',
     bodyPart: '등',
     brand: defaultBrand,
     exerciseName: '',
@@ -326,7 +335,7 @@ export default function MemberDashboard({ member, accessCode }) {
     updateSelfWorkoutItem(itemIndex, {
       exerciseName: exercise.name,
       bodyPart: exercise.body_part || '등',
-      category: exercise.category || '웨이트',
+      equipmentType: exercise.category || '핀머신',
       brand: exercise.brand_name || brandNames[0] || '기본',
     })
   }
@@ -376,7 +385,7 @@ export default function MemberDashboard({ member, accessCode }) {
     const itemRows = cleanedItems.flatMap((item) =>
       item.sets.map((setRow, index) => ({
         workout_id: workoutData.id,
-        category: item.category,
+        category: item.equipmentType,
         body_part: item.bodyPart,
         brand: item.brand,
         exercise_name: item.exerciseName,
@@ -536,10 +545,7 @@ export default function MemberDashboard({ member, accessCode }) {
                         </div>
 
                         <div className="button-row">
-                          <button
-                            className="secondary-btn"
-                            onClick={() => toggleWorkout(workout.id)}
-                          >
+                          <button className="secondary-btn" onClick={() => toggleWorkout(workout.id)}>
                             {isExpanded ? '간추려보기' : '상세히 보기'}
                           </button>
                         </div>
@@ -567,7 +573,7 @@ export default function MemberDashboard({ member, accessCode }) {
 
                                 <div className="tag-row" style={{ marginTop: 8 }}>
                                   <span className="tag">{item.bodyPart || '-'}</span>
-                                  <span className="tag">{item.category || '-'}</span>
+                                  <span className="tag">{item.equipmentType || '-'}</span>
                                   <span className="tag">{item.brand || '-'}</span>
                                 </div>
 
@@ -667,10 +673,10 @@ export default function MemberDashboard({ member, accessCode }) {
 
                 <div className="grid-3">
                   <select
-                    value={item.category}
-                    onChange={(e) => updateSelfWorkoutItem(itemIndex, { category: e.target.value })}
+                    value={item.equipmentType}
+                    onChange={(e) => updateSelfWorkoutItem(itemIndex, { equipmentType: e.target.value })}
                   >
-                    {categoryOptions.map((o) => (
+                    {equipmentTypeOptions.map((o) => (
                       <option key={o}>{o}</option>
                     ))}
                   </select>
@@ -706,14 +712,19 @@ export default function MemberDashboard({ member, accessCode }) {
                   ) : (
                     exercises
                       .filter((exercise) => {
-                        const categoryMatch = !item.category || exercise.category === item.category
+                        const typeMatch = !item.equipmentType || exercise.category === item.equipmentType
 
-                        if (item.category === '유산소') {
-                          return categoryMatch
+                        if (item.equipmentType === '유산소기구') {
+                          return typeMatch
+                        }
+
+                        if (item.equipmentType === '소도구' || item.equipmentType === '스트레칭&재활') {
+                          if (!item.bodyPart) return typeMatch
+                          return typeMatch && exercise.body_part === item.bodyPart
                         }
 
                         const bodyPartMatch = !item.bodyPart || exercise.body_part === item.bodyPart
-                        return categoryMatch && bodyPartMatch
+                        return typeMatch && bodyPartMatch
                       })
                       .slice(0, 12)
                       .map((exercise) => (
