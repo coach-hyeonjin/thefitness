@@ -101,13 +101,10 @@ export default function AdminDashboard({ user, profile, onLogout }) {
   })
 
   const [activeTab, setActiveTab] = useState('회원')
+
   const [members, setMembers] = useState([])
   const [loadingMembers, setLoadingMembers] = useState(true)
   const [selectedMemberId, setSelectedMemberId] = useState('')
-  const [exerciseSearch, setExerciseSearch] = useState('')
-  const [workoutHistory, setWorkoutHistory] = useState([])
-  const [editingWorkoutId, setEditingWorkoutId] = useState(null)
-  const [expandedWorkoutIds, setExpandedWorkoutIds] = useState([])
 
   const [brands, setBrands] = useState([])
   const [loadingBrands, setLoadingBrands] = useState(false)
@@ -115,13 +112,11 @@ export default function AdminDashboard({ user, profile, onLogout }) {
 
   const [exercises, setExercises] = useState([])
   const [loadingExercises, setLoadingExercises] = useState(false)
+  const [exerciseSearch, setExerciseSearch] = useState('')
 
-  const [exerciseForm, setExerciseForm] = useState({
-    name: '',
-    bodyPart: '등',
-    category: '웨이트',
-    brand: '기본',
-  })
+  const [workoutHistory, setWorkoutHistory] = useState([])
+  const [editingWorkoutId, setEditingWorkoutId] = useState(null)
+  const [expandedWorkoutIds, setExpandedWorkoutIds] = useState([])
 
   const [memberForm, setMemberForm] = useState({
     name: '',
@@ -143,8 +138,12 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     memo: '',
   })
 
-  const [editBrandId, setEditBrandId] = useState('')
-  const [editBrandForm, setEditBrandForm] = useState({ name: '' })
+  const [exerciseForm, setExerciseForm] = useState({
+    name: '',
+    bodyPart: '등',
+    category: '웨이트',
+    brand: '기본',
+  })
 
   const [editExerciseId, setEditExerciseId] = useState('')
   const [editExerciseForm, setEditExerciseForm] = useState({
@@ -153,6 +152,9 @@ export default function AdminDashboard({ user, profile, onLogout }) {
     category: '웨이트',
     brand: '기본',
   })
+
+  const [editBrandId, setEditBrandId] = useState('')
+  const [editBrandForm, setEditBrandForm] = useState({ name: '' })
 
   const [workoutDraft, setWorkoutDraft] = useState({
     date: getKoreaDateString(),
@@ -240,8 +242,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
       return
     }
 
-    const rows = data || []
-    setBrands(rows)
+    setBrands(data || [])
     setLoadingBrands(false)
   }
 
@@ -298,6 +299,7 @@ export default function AdminDashboard({ user, profile, onLogout }) {
       `)
       .eq('member_id', memberId)
       .order('workout_date', { ascending: false })
+      .order('created_at', { ascending: false })
 
     if (error) {
       alert(`운동 기록 불러오기 오류: ${error.message}`)
@@ -1536,8 +1538,17 @@ export default function AdminDashboard({ user, profile, onLogout }) {
 
                       <div className="mini-ex-list">
                         {filteredExercises
-                          .filter((exercise) => !item.bodyPart || exercise.body_part === item.bodyPart)
-                          .slice(0, 8)
+                          .filter((exercise) => {
+                            const categoryMatch = !item.category || exercise.category === item.category
+
+                            if (item.category === '유산소') {
+                              return categoryMatch
+                            }
+
+                            const bodyPartMatch = !item.bodyPart || exercise.body_part === item.bodyPart
+                            return categoryMatch && bodyPartMatch
+                          })
+                          .slice(0, 12)
                           .map((exercise) => (
                             <button
                               type="button"
