@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './supabase'
 import AdminDashboard from './AdminDashboard'
 import MemberDashboard from './MemberDashboard'
 import './style.css'
 import logo from './assets/logo.png'
+
+const MEMBER_SESSION_KEY = 'hiddencare_member_session_v1'
 
 function AdminLogin({ onAdminLogin }) {
   const [email, setEmail] = useState('')
@@ -114,10 +116,9 @@ function AdminLogin({ onAdminLogin }) {
   )
 }
 
-function MemberEntry({ memberIdFromUrl = '' }) {
+function MemberEntry({ memberIdFromUrl = '', onMemberLogin }) {
   const [memberId, setMemberId] = useState(memberIdFromUrl)
   const [code, setCode] = useState('')
-  const [member, setMember] = useState(null)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
 
@@ -133,9 +134,11 @@ function MemberEntry({ memberIdFromUrl = '' }) {
     setMessage('')
 
     try {
+      const normalizedCode = code.trim().toUpperCase()
+
       const { data, error } = await supabase.rpc('get_member_by_code', {
         p_member_id: memberId.trim(),
-        p_code: code.trim().toUpperCase(),
+        p_code: normalizedCode,
       })
 
       if (error) {
@@ -152,7 +155,7 @@ function MemberEntry({ memberIdFromUrl = '' }) {
         return
       }
 
-      setMember(data[0])
+      onMemberLogin(data[0], normalizedCode)
     } catch (e) {
       setMessage(`입장 오류: ${e.message}`)
     } finally {
@@ -162,10 +165,6 @@ function MemberEntry({ memberIdFromUrl = '' }) {
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') handleEnter()
-  }
-
-  if (member) {
-    return <MemberDashboard member={member} accessCode={code.trim().toUpperCase()} />
   }
 
   return (
@@ -214,21 +213,147 @@ function MemberEntry({ memberIdFromUrl = '' }) {
 export default function App() {
   const [adminUser, setAdminUser] = useState(null)
   const [adminProfile, setAdminProfile] = useState(null)
+  const [memberSession, setMemberSession] = useState(null)
+  const [booting, setBooting] = useState(true)
 
   const memberIdFromUrl = useMemo(() => {
     return new URLSearchParams(window.location.search).get('member') || ''
   }, [])
 
+  useEffect(() => {
+    let mounted = true
+
+    const restoreAdminSession = async () => {
+      const { data } = await supabase.auth.getSession()
+      const sessionUser = data?.session?.user
+
+      if (!sessionUser) return false
+
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', sessionUser.id)
+        .maybeSingle()
+
+      if (profileError || !profileData || profileData.role !== 'admin') {
+        await supabase.auth.signOut()
+        return false
+      }
+
+      if (mounted) {
+        setAdminUser(sessionUser)
+        setAdminProfile(profileData)
+      }
+      return true
+    }
+
+    const restoreMemberSession = () => {
+      try {
+        const raw = localStorage.getItem(MEMBER_SESSION_KEY)
+        if (!raw) return false
+
+        const parsed = JSON.parse(raw)
+        if (!parsed?.member || !parsed?.accessCode) return false
+
+        if (memberIdFromUrl && parsed.member.id !== memberIdFromUrl) {
+          localStorage.removeItem(MEMBER_SESSION_KEY)
+          return false
+        }
+
+        if (mounted) {
+          setMemberSession(parsed)
+        }
+        return true
+      } catch {
+        localStorage.removeItem(MEMBER_SESSION_KEY)
+        return false
+      }
+    }
+
+    const init = async () => {
+      const adminRestored = await restoreAdminSession()
+
+      if (!adminRestored) {
+        restoreMemberSession()
+      }
+
+      if (mounted) {
+        setBooting(false)
+      }
+    }
+
+    init()
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (session?.user) {
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .maybeSingle()
+
+        if (profileData?.role === 'admin') {
+          if (mounted) {
+            setAdminUser(session.user)
+            setAdminProfile(profileData)
+            setMemberSession(null)
+          }
+        }
+      } else {
+        if (mounted) {
+          setAdminUser(null)
+          setAdminProfile(null)
+        }
+      }
+    })
+
+    return () => {
+      mounted = false
+      authListener?.subscription?.unsubscribe()
+    }
+  }, [memberIdFromUrl])
+
   const handleAdminLogin = (user, profile) => {
     setAdminUser(user)
     setAdminProfile(profile)
+    setMemberSession(null)
+  }
+
+  const handleMemberLogin = (member, accessCode) => {
+    const nextSession = { member, accessCode }
+    setMemberSession(nextSession)
+    localStorage.setItem(MEMBER_SESSION_KEY, JSON.stringify(nextSession))
   }
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
     setAdminUser(null)
     setAdminProfile(null)
+    localStorage.removeItem(MEMBER_SESSION_KEY)
+    setMemberSession(null)
     window.location.href = window.location.origin
+  }
+
+  const handleMemberLogout = () => {
+    localStorage.removeItem(MEMBER_SESSION_KEY)
+    setMemberSession(null)
+    if (memberIdFromUrl) {
+      window.location.href = `${window.location.origin}?member=${memberIdFromUrl}`
+    } else {
+      window.location.href = window.location.origin
+    }
+  }
+
+  if (booting) {
+    return (
+      <div className="entry-shell">
+        <div className="entry-header">
+          <img src={logo} alt="더피트니스 화정점 로고" className="main-logo" />
+          <h1>더피트니스 화정점</h1>
+          <p>로그인 상태를 확인하는 중입니다.</p>
+        </div>
+      </div>
+    )
   }
 
   if (adminUser && adminProfile) {
@@ -237,6 +362,16 @@ export default function App() {
         user={adminUser}
         profile={adminProfile}
         onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (memberSession?.member && memberSession?.accessCode) {
+    return (
+      <MemberDashboard
+        member={memberSession.member}
+        accessCode={memberSession.accessCode}
+        onLogout={handleMemberLogout}
       />
     )
   }
@@ -251,7 +386,10 @@ export default function App() {
         </div>
 
         <div className="entry-grid single">
-          <MemberEntry memberIdFromUrl={memberIdFromUrl} />
+          <MemberEntry
+            memberIdFromUrl={memberIdFromUrl}
+            onMemberLogin={handleMemberLogin}
+          />
         </div>
       </div>
     )
@@ -267,7 +405,7 @@ export default function App() {
 
       <div className="entry-grid">
         <AdminLogin onAdminLogin={handleAdminLogin} />
-        <MemberEntry />
+        <MemberEntry onMemberLogin={handleMemberLogin} />
       </div>
     </div>
   )
