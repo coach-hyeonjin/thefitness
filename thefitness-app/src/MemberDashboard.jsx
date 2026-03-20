@@ -3,6 +3,8 @@ import { supabase } from './supabase'
 import './style.css'
 
 const memberTabs = ['내정보', '저장된 운동기록', '개인운동입력', '루틴', '사용방법']
+const bodyPartOptions = ['가슴', '어깨', '팔', '등', '하체', '스트레칭&재활', '유산소']
+const categoryOptions = ['웨이트', '유산소', '스트레칭&재활']
 
 function groupWorkoutItems(items = []) {
   const map = new Map()
@@ -62,6 +64,26 @@ function summarizeWorkout(workout) {
   }
 }
 
+function createSelfWorkoutItem(defaultBrand = '기본') {
+  return {
+    id: `self-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    category: '웨이트',
+    bodyPart: '등',
+    brand: defaultBrand,
+    exerciseName: '',
+    sets: [{ setNo: 1, kg: 0, reps: 0 }],
+    goodPoint: '',
+    improvePoint: '',
+  }
+}
+
+function normalizeSetNumbers(sets = []) {
+  return sets.map((setRow, index) => ({
+    ...setRow,
+    setNo: index + 1,
+  }))
+}
+
 export default function MemberDashboard({ member, accessCode }) {
   const [activeTab, setActiveTab] = useState('내정보')
   const [workoutHistory, setWorkoutHistory] = useState([])
@@ -71,15 +93,17 @@ export default function MemberDashboard({ member, accessCode }) {
     title: '더피트니스 화정점 사용방법',
     content: '',
   })
+  const [exercises, setExercises] = useState([])
   const [loadingHistory, setLoadingHistory] = useState(true)
   const [loadingRoutine, setLoadingRoutine] = useState(true)
   const [loadingManual, setLoadingManual] = useState(true)
+  const [loadingExercises, setLoadingExercises] = useState(true)
   const [savingSelfWorkout, setSavingSelfWorkout] = useState(false)
 
   const [selfWorkoutForm, setSelfWorkoutForm] = useState({
     workout_date: getTodayKST(),
-    body_parts_text: '',
-    memo: '',
+    bodyParts: [],
+    items: [createSelfWorkoutItem('기본')],
   })
 
   const remainingSessions = Math.max(
@@ -90,6 +114,11 @@ export default function MemberDashboard({ member, accessCode }) {
   const progress = Math.round(
     (Number(member.used_sessions || 0) / Math.max(Number(member.total_sessions || 1), 1)) * 100
   )
+
+  const brandNames = useMemo(() => {
+    const names = [...new Set((exercises || []).map((e) => e.brand_name).filter(Boolean))]
+    return names.length > 0 ? names : ['기본']
+  }, [exercises])
 
   const loadWorkoutHistory = async () => {
     setLoadingHistory(true)
@@ -155,13 +184,47 @@ export default function MemberDashboard({ member, accessCode }) {
     setLoadingManual(false)
   }
 
+  const loadExercises = async () => {
+    setLoadingExercises(true)
+
+    const { data, error } = await supabase
+      .from('exercises')
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true })
+
+    if (error) {
+      alert(`운동DB 불러오기 오류: ${error.message}`)
+      setLoadingExercises(false)
+      return
+    }
+
+    setExercises(data || [])
+    setLoadingExercises(false)
+  }
+
   useEffect(() => {
     loadWorkoutHistory()
     loadRoutines()
     loadManual()
+    loadExercises()
     setExpandedWorkoutIds([])
     setActiveTab('내정보')
   }, [member.id])
+
+  useEffect(() => {
+    const defaultBrand = brandNames[0] || '기본'
+    setSelfWorkoutForm((prev) => ({
+      ...prev,
+      items:
+        prev.items && prev.items.length > 0
+          ? prev.items.map((item) => ({
+              ...item,
+              brand: item.brand || defaultBrand,
+            }))
+          : [createSelfWorkoutItem(defaultBrand)],
+    }))
+  }, [brandNames])
 
   const monthlyStats = useMemo(() => {
     const monthKey = getTodayKST().slice(0, 7)
@@ -184,30 +247,151 @@ export default function MemberDashboard({ member, accessCode }) {
     )
   }
 
+  const toggleSelfBodyPart = (part) => {
+    setSelfWorkoutForm((prev) => ({
+      ...prev,
+      bodyParts: prev.bodyParts.includes(part)
+        ? prev.bodyParts.filter((p) => p !== part)
+        : [...prev.bodyParts, part],
+    }))
+  }
+
+  const updateSelfWorkoutItem = (index, patch) => {
+    setSelfWorkoutForm((prev) => ({
+      ...prev,
+      items: prev.items.map((item, i) => (i === index ? { ...item, ...patch } : item)),
+    }))
+  }
+
+  const addSelfWorkoutItem = () => {
+    setSelfWorkoutForm((prev) => ({
+      ...prev,
+      items: [...prev.items, createSelfWorkoutItem(brandNames[0] || '기본')],
+    }))
+  }
+
+  const removeSelfWorkoutItem = (index) => {
+    setSelfWorkoutForm((prev) => ({
+      ...prev,
+      items:
+        prev.items.length <= 1
+          ? prev.items
+          : prev.items.filter((_, i) => i !== index),
+    }))
+  }
+
+  const addSelfSet = (itemIndex) => {
+    setSelfWorkoutForm((prev) => ({
+      ...prev,
+      items: prev.items.map((item, i) =>
+        i === itemIndex
+          ? {
+              ...item,
+              sets: [...item.sets, { setNo: item.sets.length + 1, kg: 0, reps: 0 }],
+            }
+          : item
+      ),
+    }))
+  }
+
+  const removeSelfSet = (itemIndex, setIndex) => {
+    setSelfWorkoutForm((prev) => ({
+      ...prev,
+      items: prev.items.map((item, i) => {
+        if (i !== itemIndex) return item
+        if (item.sets.length <= 1) return item
+        const nextSets = item.sets.filter((_, j) => j !== setIndex)
+        return { ...item, sets: normalizeSetNumbers(nextSets) }
+      }),
+    }))
+  }
+
+  const updateSelfSet = (itemIndex, setIndex, key, value) => {
+    setSelfWorkoutForm((prev) => ({
+      ...prev,
+      items: prev.items.map((item, i) =>
+        i === itemIndex
+          ? {
+              ...item,
+              sets: item.sets.map((setRow, j) =>
+                j === setIndex ? { ...setRow, [key]: Number(value) || 0 } : setRow
+              ),
+            }
+          : item
+      ),
+    }))
+  }
+
+  const applyExerciseToSelfWorkout = (itemIndex, exercise) => {
+    updateSelfWorkoutItem(itemIndex, {
+      exerciseName: exercise.name,
+      bodyPart: exercise.body_part || '등',
+      category: exercise.category || '웨이트',
+      brand: exercise.brand_name || brandNames[0] || '기본',
+    })
+  }
+
   const saveSelfWorkout = async () => {
     if (!selfWorkoutForm.workout_date) {
       alert('날짜를 입력해 주세요.')
       return
     }
 
+    const cleanedItems = selfWorkoutForm.items
+      .filter((item) => item.exerciseName.trim())
+      .map((item) => ({
+        ...item,
+        sets:
+          item.sets && item.sets.length > 0
+            ? normalizeSetNumbers(item.sets)
+            : [{ setNo: 1, kg: 0, reps: 0 }],
+      }))
+
+    if (cleanedItems.length === 0) {
+      alert('개인운동도 운동명을 1개 이상 선택하거나 입력해 주세요.')
+      return
+    }
+
     setSavingSelfWorkout(true)
 
-    const bodyParts = selfWorkoutForm.body_parts_text
-      .split(',')
-      .map((v) => v.trim())
-      .filter(Boolean)
+    const { data: workoutData, error: workoutError } = await supabase
+      .from('workouts')
+      .insert([
+        {
+          member_id: member.id,
+          workout_date: selfWorkoutForm.workout_date,
+          body_parts: selfWorkoutForm.bodyParts,
+          workout_type: 'self',
+        },
+      ])
+      .select()
+      .single()
 
-    const { error } = await supabase.from('workouts').insert([
-      {
-        member_id: member.id,
-        workout_date: selfWorkoutForm.workout_date,
-        body_parts: bodyParts,
-        workout_type: 'self',
-      },
-    ])
+    if (workoutError) {
+      alert(`개인운동 저장 오류: ${workoutError.message}`)
+      setSavingSelfWorkout(false)
+      return
+    }
 
-    if (error) {
-      alert(`개인운동 저장 오류: ${error.message}`)
+    const itemRows = cleanedItems.flatMap((item) =>
+      item.sets.map((setRow, index) => ({
+        workout_id: workoutData.id,
+        category: item.category,
+        body_part: item.bodyPart,
+        brand: item.brand,
+        exercise_name: item.exerciseName,
+        set_no: index + 1,
+        kg: Number(setRow.kg) || 0,
+        reps: Number(setRow.reps) || 0,
+        good_point: item.goodPoint || '',
+        improve_point: item.improvePoint || '',
+      }))
+    )
+
+    const { error: itemError } = await supabase.from('workout_items').insert(itemRows)
+
+    if (itemError) {
+      alert(`개인운동 세부 저장 오류: ${itemError.message}`)
       setSavingSelfWorkout(false)
       return
     }
@@ -216,8 +400,8 @@ export default function MemberDashboard({ member, accessCode }) {
 
     setSelfWorkoutForm({
       workout_date: getTodayKST(),
-      body_parts_text: '',
-      memo: '',
+      bodyParts: [],
+      items: [createSelfWorkoutItem(brandNames[0] || '기본')],
     })
 
     await loadWorkoutHistory()
@@ -374,14 +558,7 @@ export default function MemberDashboard({ member, accessCode }) {
 
                       {isExpanded && (
                         <div className="record-detail-list">
-                          {(workout.workout_type || 'pt') === 'self' && items.length === 0 ? (
-                            <div className="memo-box">
-                              <div className="memo-title">개인운동 기록</div>
-                              <div>
-                                등록 부위: {(workout.body_parts || []).join(', ') || '-'}
-                              </div>
-                            </div>
-                          ) : items.length === 0 ? (
+                          {items.length === 0 ? (
                             <div className="muted">상세 운동 항목이 없습니다.</div>
                           ) : (
                             items.map((item) => (
@@ -434,44 +611,181 @@ export default function MemberDashboard({ member, accessCode }) {
             <div className="section-head">
               <div>
                 <div className="section-label">개인운동 입력</div>
-                <h2>직접 기록하기</h2>
+                <h2>부위 / 기구 선택해서 기록하기</h2>
               </div>
             </div>
 
             <div className="form-block">
-              <input
-                type="date"
-                value={selfWorkoutForm.workout_date}
-                onChange={(e) =>
-                  setSelfWorkoutForm((prev) => ({
-                    ...prev,
-                    workout_date: e.target.value,
-                  }))
-                }
-              />
+              <div>
+                <label>날짜</label>
+                <input
+                  type="date"
+                  value={selfWorkoutForm.workout_date}
+                  onChange={(e) =>
+                    setSelfWorkoutForm((prev) => ({
+                      ...prev,
+                      workout_date: e.target.value,
+                    }))
+                  }
+                />
+              </div>
 
-              <input
-                placeholder="운동 부위 입력 (예: 등, 하체, 유산소)"
-                value={selfWorkoutForm.body_parts_text}
-                onChange={(e) =>
-                  setSelfWorkoutForm((prev) => ({
-                    ...prev,
-                    body_parts_text: e.target.value,
-                  }))
-                }
-              />
+              <div>
+                <label>운동 부위 선택</label>
+                <div className="bodypart-wrap">
+                  {bodyPartOptions.map((part) => (
+                    <button
+                      type="button"
+                      key={part}
+                      className={`part-btn ${selfWorkoutForm.bodyParts.includes(part) ? 'on' : ''}`}
+                      onClick={() => toggleSelfBodyPart(part)}
+                    >
+                      {part}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
 
-              <textarea
-                placeholder="메모 (선택)"
-                value={selfWorkoutForm.memo}
-                onChange={(e) =>
-                  setSelfWorkoutForm((prev) => ({
-                    ...prev,
-                    memo: e.target.value,
-                  }))
-                }
-              />
+            <div className="section-head" style={{ marginTop: 18 }}>
+              <h3 style={{ margin: 0 }}>운동 목록</h3>
+              <button className="secondary-btn" onClick={addSelfWorkoutItem}>
+                + 운동 추가
+              </button>
+            </div>
 
+            {selfWorkoutForm.items.map((item, itemIndex) => (
+              <div className="workout-card modern-card" key={item.id}>
+                <div className="workout-card-head">
+                  <strong>운동 {itemIndex + 1}</strong>
+                  {selfWorkoutForm.items.length > 1 && (
+                    <button className="danger-btn" onClick={() => removeSelfWorkoutItem(itemIndex)}>
+                      삭제
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid-3">
+                  <select
+                    value={item.category}
+                    onChange={(e) => updateSelfWorkoutItem(itemIndex, { category: e.target.value })}
+                  >
+                    {categoryOptions.map((o) => (
+                      <option key={o}>{o}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={item.bodyPart}
+                    onChange={(e) => updateSelfWorkoutItem(itemIndex, { bodyPart: e.target.value })}
+                  >
+                    {bodyPartOptions.map((o) => (
+                      <option key={o}>{o}</option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={item.brand}
+                    onChange={(e) => updateSelfWorkoutItem(itemIndex, { brand: e.target.value })}
+                  >
+                    {brandNames.map((o) => (
+                      <option key={o}>{o}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <input
+                  placeholder="운동명 입력"
+                  value={item.exerciseName}
+                  onChange={(e) => updateSelfWorkoutItem(itemIndex, { exerciseName: e.target.value })}
+                />
+
+                <div className="mini-ex-list">
+                  {loadingExercises ? (
+                    <span className="muted">운동DB 불러오는 중...</span>
+                  ) : (
+                    exercises
+                      .filter((exercise) => {
+                        const bodyPartMatch = !item.bodyPart || exercise.body_part === item.bodyPart
+                        const categoryMatch = !item.category || exercise.category === item.category
+                        return bodyPartMatch && categoryMatch
+                      })
+                      .slice(0, 8)
+                      .map((exercise) => (
+                        <button
+                          type="button"
+                          key={exercise.id}
+                          className="mini-ex-item"
+                          onClick={() => applyExerciseToSelfWorkout(itemIndex, exercise)}
+                        >
+                          {exercise.name} · {exercise.brand_name}
+                        </button>
+                      ))
+                  )}
+                </div>
+
+                <div className="set-card-wrap">
+                  {item.sets.map((setRow, setIndex) => (
+                    <div className="set-card" key={`${item.id}-set-${setIndex}`}>
+                      <div className="set-card-head">
+                        <strong>{setIndex + 1}세트</strong>
+                        {item.sets.length > 1 && (
+                          <button
+                            type="button"
+                            className="danger-btn"
+                            onClick={() => removeSelfSet(itemIndex, setIndex)}
+                          >
+                            세트 삭제
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid-2">
+                        <div>
+                          <label>무게(kg)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={setRow.kg}
+                            onChange={(e) => updateSelfSet(itemIndex, setIndex, 'kg', e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label>횟수(reps)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={setRow.reps}
+                            onChange={(e) => updateSelfSet(itemIndex, setIndex, 'reps', e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="button-row" style={{ marginTop: 12 }}>
+                  <button type="button" className="secondary-btn" onClick={() => addSelfSet(itemIndex)}>
+                    + 세트 추가
+                  </button>
+                </div>
+
+                <div className="grid-2">
+                  <textarea
+                    placeholder="잘한 점"
+                    value={item.goodPoint}
+                    onChange={(e) => updateSelfWorkoutItem(itemIndex, { goodPoint: e.target.value })}
+                  />
+                  <textarea
+                    placeholder="보완할 점"
+                    value={item.improvePoint}
+                    onChange={(e) => updateSelfWorkoutItem(itemIndex, { improvePoint: e.target.value })}
+                  />
+                </div>
+              </div>
+            ))}
+
+            <div className="save-row">
               <button
                 className="primary-btn"
                 onClick={saveSelfWorkout}
@@ -484,8 +798,8 @@ export default function MemberDashboard({ member, accessCode }) {
             <div className="memo-box" style={{ marginTop: 16 }}>
               <div className="memo-title">안내</div>
               <div>
-                개인운동 입력은 횟수 체크용입니다.
-                PT 세션 차감은 관리자 기록 작성 기준으로 반영됩니다.
+                개인운동은 직접 선택해서 기록하는 용도입니다.
+                PT 세션 차감은 관리자 기록 작성 기준으로만 반영됩니다.
               </div>
             </div>
           </section>
