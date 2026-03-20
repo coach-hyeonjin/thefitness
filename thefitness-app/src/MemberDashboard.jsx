@@ -155,6 +155,51 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
     return names.length > 0 ? names : ['기본']
   }, [exercises])
 
+  const ptHistory = useMemo(
+    () => workoutHistory.filter((row) => (row.workout_type || 'pt') === 'pt'),
+    [workoutHistory]
+  )
+
+  const selfHistory = useMemo(
+    () => workoutHistory.filter((row) => (row.workout_type || 'pt') === 'self'),
+    [workoutHistory]
+  )
+
+  const monthlyStats = useMemo(() => {
+    const monthKey = getTodayKST().slice(0, 7)
+    const currentMonthRows = workoutHistory.filter(
+      (row) => (row.workout_date || '').slice(0, 7) === monthKey
+    )
+
+    return {
+      total: currentMonthRows.length,
+      pt: currentMonthRows.filter((row) => (row.workout_type || 'pt') === 'pt').length,
+      self: currentMonthRows.filter((row) => (row.workout_type || 'pt') === 'self').length,
+    }
+  }, [workoutHistory])
+
+  const dietSummary = useMemo(() => {
+    const totalMeals = dietLogs.length
+    const avgCarbs =
+      totalMeals > 0
+        ? Math.round(
+            dietLogs.reduce((sum, row) => sum + (Number(row.carbs) || 0), 0) / totalMeals
+          )
+        : 0
+    const avgProtein =
+      totalMeals > 0
+        ? Math.round(
+            dietLogs.reduce((sum, row) => sum + (Number(row.protein) || 0), 0) / totalMeals
+          )
+        : 0
+    const avgFat =
+      totalMeals > 0
+        ? Math.round(dietLogs.reduce((sum, row) => sum + (Number(row.fat) || 0), 0) / totalMeals)
+        : 0
+
+    return { totalMeals, avgCarbs, avgProtein, avgFat }
+  }, [dietLogs])
+
   const loadWorkoutHistory = async () => {
     setLoadingHistory(true)
 
@@ -283,7 +328,7 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
     if (activeTab === '식단') {
       loadDietLogs(dietMonthFilter)
     }
-  }, [dietMonthFilter])
+  }, [dietMonthFilter, activeTab])
 
   useEffect(() => {
     const defaultBrand = brandNames[0] || '기본'
@@ -298,37 +343,6 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
           : [createSelfWorkoutItem(defaultBrand)],
     }))
   }, [brandNames])
-
-  const monthlyStats = useMemo(() => {
-    const monthKey = getTodayKST().slice(0, 7)
-    const currentMonthRows = workoutHistory.filter(
-      (row) => (row.workout_date || '').slice(0, 7) === monthKey
-    )
-
-    return {
-      total: currentMonthRows.length,
-      pt: currentMonthRows.filter((row) => (row.workout_type || 'pt') === 'pt').length,
-      self: currentMonthRows.filter((row) => (row.workout_type || 'pt') === 'self').length,
-    }
-  }, [workoutHistory])
-
-  const dietSummary = useMemo(() => {
-    const totalMeals = dietLogs.length
-    const avgCarbs =
-      totalMeals > 0
-        ? Math.round(dietLogs.reduce((sum, row) => sum + (Number(row.carbs) || 0), 0) / totalMeals)
-        : 0
-    const avgProtein =
-      totalMeals > 0
-        ? Math.round(dietLogs.reduce((sum, row) => sum + (Number(row.protein) || 0), 0) / totalMeals)
-        : 0
-    const avgFat =
-      totalMeals > 0
-        ? Math.round(dietLogs.reduce((sum, row) => sum + (Number(row.fat) || 0), 0) / totalMeals)
-        : 0
-
-    return { totalMeals, avgCarbs, avgProtein, avgFat }
-  }, [dietLogs])
 
   const toggleWorkout = (workoutId) => {
     setExpandedWorkoutIds((prev) =>
@@ -591,9 +605,6 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
     alert('식단 기록 삭제 완료')
     await loadDietLogs()
   }
-
-  const ptHistory = workoutHistory.filter((row) => (row.workout_type || 'pt') === 'pt')
-  const selfHistory = workoutHistory.filter((row) => (row.workout_type || 'pt') === 'self')
 
   return (
     <div className="dashboard-shell member-shell">
@@ -1167,9 +1178,13 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
             </div>
 
             {loadingDietLogs ? (
-              <div className="muted" style={{ marginTop: 16 }}>식단 기록 불러오는 중...</div>
+              <div className="muted" style={{ marginTop: 16 }}>
+                식단 기록 불러오는 중...
+              </div>
             ) : dietLogs.length === 0 ? (
-              <div className="muted" style={{ marginTop: 16 }}>해당 기간 식단 기록이 없습니다.</div>
+              <div className="muted" style={{ marginTop: 16 }}>
+                해당 기간 식단 기록이 없습니다.
+              </div>
             ) : (
               <div className="record-list" style={{ marginTop: 16 }}>
                 {dietLogs.map((log) => (
@@ -1181,6 +1196,7 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
                           {log.meal_type || '-'} · {log.meal_time || '시간 미입력'}
                         </div>
                       </div>
+
                       <div className="button-row">
                         <div className="pill">배고픔 {log.hunger_level ?? '-'} / 10</div>
                         <button className="secondary-btn" onClick={() => startEditDietLog(log)}>
@@ -1314,3 +1330,4 @@ export default function MemberDashboard({ member, accessCode, onLogout }) {
       </div>
     </div>
   )
+}
