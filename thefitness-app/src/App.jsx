@@ -2,380 +2,381 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './supabase'
 import AdminDashboard from './AdminDashboard'
 import MemberDashboard from './MemberDashboard'
-import './style.css'
 import logo from './assets/logo.png'
 
-const MEMBER_SESSION_KEY = 'hiddencare_member_session_v1'
+const MEMBER_STORAGE_KEY = 'thefitness_hwajeong_member_session_v1'
 
-function AdminLogin({ onAdminLogin }) {
+function BrandHeader({ large = false }) {
+  return (
+    <div className={`brand-header ${large ? 'large' : ''}`}>
+      <img
+        src={logo}
+        alt="더피트니스 화정점 로고"
+        className={`brand-logo ${large ? 'large' : ''}`}
+      />
+      <div className="brand-header-text">
+        <div className="brand-mark">더피트니스 화정점</div>
+        {large ? (
+          <div className="brand-caption">
+            회원관리 · 운동기록 · 식단기록 · 건강정보
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function AdminLogin({ onLogin, onBack }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
 
-  const handleLogin = async () => {
-    if (loading) return
-
-    if (!email.trim() || !password.trim()) {
-      setMessage('이메일과 비밀번호를 입력해 주세요.')
-      return
-    }
-
+  const handleLogin = async (e) => {
+    e.preventDefault()
     setLoading(true)
     setMessage('')
 
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      })
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
 
-      if (error) {
-        if (error.message?.toLowerCase().includes('invalid login credentials')) {
-          setMessage('로그인 오류: 이메일 또는 비밀번호가 올바르지 않습니다.')
-        } else {
-          setMessage(`로그인 오류: ${error.message}`)
-        }
-        return
-      }
-
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', data.user.id)
-        .maybeSingle()
-
-      if (profileError) {
-        setMessage(`프로필 조회 오류: ${profileError.message}`)
-        await supabase.auth.signOut()
-        return
-      }
-
-      if (!profileData || profileData.role !== 'admin') {
-        setMessage('관리자 계정이 아닙니다.')
-        await supabase.auth.signOut()
-        return
-      }
-
-      onAdminLogin(data.user, profileData)
-    } catch (e) {
-      setMessage(`로그인 오류: ${e.message}`)
-    } finally {
+    if (error) {
+      setMessage(error.message || '로그인에 실패했습니다.')
       setLoading(false)
+      return
     }
-  }
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter') handleLogin()
+    const { data: userData } = await supabase.auth.getUser()
+    const userId = userData?.user?.id
+
+    if (!userId) {
+      setMessage('사용자 정보를 불러오지 못했습니다.')
+      setLoading(false)
+      return
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle()
+
+    if (profileError || !profile || profile.role !== 'admin') {
+      await supabase.auth.signOut()
+      setMessage('관리자 계정만 접근할 수 있습니다.')
+      setLoading(false)
+      return
+    }
+
+    onLogin(profile)
+    setLoading(false)
   }
 
   return (
-    <div className="entry-card">
-      <h2>관리자 로그인</h2>
-      <p className="muted">더피트니스 화정점 관리자 전용 화면입니다.</p>
+    <div className="auth-card auth-card-large">
+      <BrandHeader large />
+      <h1>관리자 로그인</h1>
+      <p className="sub-text">더피트니스 화정점 관리자 계정으로 로그인하세요.</p>
 
-      <input
-        className="app-input"
-        placeholder="이메일"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        onKeyDown={handleKeyDown}
-        autoComplete="username"
-      />
+      <form onSubmit={handleLogin} className="stack-gap">
+        <label className="field">
+          <span>이메일</span>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="admin@email.com"
+          />
+        </label>
 
-      <div className="password-wrap">
-        <input
-          className="app-input"
-          type={showPassword ? 'text' : 'password'}
-          placeholder="비밀번호"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          onKeyDown={handleKeyDown}
-          autoComplete="current-password"
-        />
-        <button
-          type="button"
-          className="password-toggle-btn"
-          onClick={() => setShowPassword((prev) => !prev)}
-        >
-          {showPassword ? '숨기기' : '보기'}
+        <label className="field">
+          <span>비밀번호</span>
+          <div className="password-wrapper">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="비밀번호 입력"
+            />
+            <button
+              type="button"
+              className="toggle-btn"
+              onClick={() => setShowPassword((prev) => !prev)}
+            >
+              {showPassword ? '숨김' : '보기'}
+            </button>
+          </div>
+        </label>
+
+        <button className="primary-btn" type="submit" disabled={loading}>
+          {loading ? '로그인 중...' : '관리자 로그인'}
         </button>
-      </div>
 
-      <button
-        className="primary-btn full-btn"
-        onClick={handleLogin}
-        disabled={loading}
-      >
-        {loading ? '로그인 중...' : '관리자 로그인'}
-      </button>
+        <button type="button" className="secondary-btn" onClick={onBack}>
+          돌아가기
+        </button>
 
-      {message && <p className="error-text">{message}</p>}
+        {message ? <div className="message error">{message}</div> : null}
+      </form>
     </div>
   )
 }
 
-function MemberEntry({ memberIdFromUrl = '', onMemberLogin }) {
-  const [memberId, setMemberId] = useState(memberIdFromUrl)
-  const [code, setCode] = useState('')
+function MemberAccess({ initialMemberId, onSuccess, onBack }) {
+  const [memberId, setMemberId] = useState(initialMemberId || '')
+  const [accessCode, setAccessCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
 
-  const handleEnter = async () => {
-    if (loading) return
+  const handleAccess = async (e) => {
+    e.preventDefault()
 
-    if (!memberId.trim() || !code.trim()) {
-      setMessage('회원 전용 링크와 코드를 확인해 주세요.')
+    if (!memberId.trim() || !accessCode.trim()) {
+      setMessage('회원 ID와 access code를 입력해주세요.')
       return
     }
 
     setLoading(true)
     setMessage('')
 
-    try {
-      const normalizedCode = code.trim().toUpperCase()
+    const { data, error } = await supabase.rpc('get_member_by_code', {
+      member_uuid: memberId,
+      code: accessCode.trim(),
+    })
 
-      const { data, error } = await supabase.rpc('get_member_by_code', {
-        p_member_id: memberId.trim(),
-        p_code: normalizedCode,
-      })
-
-      if (error) {
-        if (error.message?.includes('invalid input syntax for type uuid')) {
-          setMessage('회원 링크가 올바르지 않습니다. 관리자에게 다시 받은 링크로 접속해 주세요.')
-        } else {
-          setMessage(`입장 오류: ${error.message}`)
-        }
-        return
-      }
-
-      if (!data || data.length === 0) {
-        setMessage('코드가 일치하지 않습니다.')
-        return
-      }
-
-      onMemberLogin(data[0], normalizedCode)
-    } catch (e) {
-      setMessage(`입장 오류: ${e.message}`)
-    } finally {
+    if (error || !data || data.length === 0) {
+      setMessage('회원 확인에 실패했습니다. ID 또는 access code를 다시 확인해주세요.')
       setLoading(false)
+      return
     }
-  }
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter') handleEnter()
+    const sessionData = {
+      member: data[0],
+      accessCode: accessCode.trim(),
+    }
+
+    localStorage.setItem(MEMBER_STORAGE_KEY, JSON.stringify(sessionData))
+    onSuccess(sessionData)
+    setLoading(false)
   }
 
   return (
-    <div className="entry-card">
-      <h2>회원 전용 입장</h2>
-      <p className="muted">관리자에게 받은 전용 링크와 코드를 입력해 주세요.</p>
+    <div className="auth-card auth-card-large">
+      <BrandHeader large />
+      <h1>회원 입장</h1>
+      <p className="sub-text">회원 전용 링크의 member 값과 access code를 입력하세요.</p>
 
-      {!memberIdFromUrl && (
-        <input
-          className="app-input"
-          placeholder="회원 ID 또는 링크의 member 값"
-          value={memberId}
-          onChange={(e) => setMemberId(e.target.value)}
-          onKeyDown={handleKeyDown}
-        />
-      )}
+      <form onSubmit={handleAccess} className="stack-gap">
+        <label className="field">
+          <span>회원 ID</span>
+          <input
+            value={memberId}
+            onChange={(e) => setMemberId(e.target.value)}
+            placeholder="URL의 ?member= 뒤 값"
+          />
+        </label>
 
-      {memberIdFromUrl && (
-        <div className="member-link-box" style={{ marginBottom: 12 }}>
-          <div className="memo-title">회원 링크 확인됨</div>
-          <div className="muted">코드만 입력하면 입장할 수 있습니다.</div>
-        </div>
-      )}
+        <label className="field">
+          <span>Access Code</span>
+          <input
+            value={accessCode}
+            onChange={(e) => setAccessCode(e.target.value.toUpperCase())}
+            placeholder="예: TF2026A1"
+          />
+        </label>
 
-      <input
-        className="app-input"
-        placeholder="입장 코드"
-        value={code}
-        onChange={(e) => setCode(e.target.value.toUpperCase())}
-        onKeyDown={handleKeyDown}
-      />
+        <button className="primary-btn" type="submit" disabled={loading}>
+          {loading ? '확인 중...' : '회원 입장'}
+        </button>
 
-      <button
-        className="secondary-btn full-btn"
-        onClick={handleEnter}
-        disabled={loading}
-      >
-        {loading ? '확인 중...' : '회원 전용 입장'}
-      </button>
+        <button type="button" className="secondary-btn" onClick={onBack}>
+          돌아가기
+        </button>
 
-      {message && <p className="error-text">{message}</p>}
+        {message ? <div className="message error">{message}</div> : null}
+      </form>
     </div>
   )
 }
 
 export default function App() {
-  const [adminUser, setAdminUser] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [mode, setMode] = useState('home')
   const [adminProfile, setAdminProfile] = useState(null)
   const [memberSession, setMemberSession] = useState(null)
-  const [booting, setBooting] = useState(true)
 
-  const memberIdFromUrl = useMemo(() => {
-    return new URLSearchParams(window.location.search).get('member') || ''
+  const initialMemberId = useMemo(() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('member') || ''
   }, [])
 
   useEffect(() => {
-    let isMounted = true
+    let cancelled = false
 
-    const init = async () => {
+    const restore = async () => {
       try {
-        // 1. 관리자 세션 복구 먼저 확인
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
+        const savedMember = localStorage.getItem(MEMBER_STORAGE_KEY)
+
+        if (savedMember) {
+          try {
+            const parsed = JSON.parse(savedMember)
+            if (parsed?.member?.id && parsed?.accessCode) {
+              if (!cancelled) {
+                setMemberSession(parsed)
+                setMode('member')
+                setLoading(false)
+              }
+              return
+            }
+          } catch {
+            localStorage.removeItem(MEMBER_STORAGE_KEY)
+          }
+        }
+
+        const { data, error } = await supabase.auth.getSession()
+
+        if (error) {
+          if (!cancelled) {
+            setMode(initialMemberId ? 'member-access' : 'home')
+            setLoading(false)
+          }
+          return
+        }
+
+        const session = data?.session
 
         if (session?.user) {
-          const { data: profileData } = await supabase
+          const { data: profile } = await supabase
             .from('profiles')
             .select('*')
             .eq('id', session.user.id)
             .maybeSingle()
 
-          if (profileData?.role === 'admin') {
-            if (isMounted) {
-              setAdminUser(session.user)
-              setAdminProfile(profileData)
-              setBooting(false)
-            }
+          if (!cancelled && profile?.role === 'admin') {
+            setAdminProfile(profile)
+            setMode('admin')
+            setLoading(false)
             return
-          } else {
-            await supabase.auth.signOut()
           }
         }
 
-        // 2. 회원 세션 복구
-        const raw = localStorage.getItem(MEMBER_SESSION_KEY)
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw)
-
-            if (parsed?.member && parsed?.accessCode) {
-              if (!memberIdFromUrl || parsed.member.id === memberIdFromUrl) {
-                if (isMounted) {
-                  setMemberSession(parsed)
-                  setBooting(false)
-                }
-                return
-              }
-            }
-          } catch {
-            localStorage.removeItem(MEMBER_SESSION_KEY)
-          }
+        if (!cancelled) {
+          setMode(initialMemberId ? 'member-access' : 'home')
+          setLoading(false)
         }
       } catch {
-        // 아무것도 안 하고 아래에서 로그인 화면으로 넘김
-      }
-
-      if (isMounted) {
-        setBooting(false)
+        if (!cancelled) {
+          setMode(initialMemberId ? 'member-access' : 'home')
+          setLoading(false)
+        }
       }
     }
 
-    init()
+    restore()
 
     return () => {
-      isMounted = false
+      cancelled = true
     }
-  }, [memberIdFromUrl])
-
-  const handleAdminLogin = (user, profile) => {
-    setAdminUser(user)
-    setAdminProfile(profile)
-    setMemberSession(null)
-  }
-
-  const handleMemberLogin = (member, accessCode) => {
-    const nextSession = { member, accessCode }
-    setMemberSession(nextSession)
-    localStorage.setItem(MEMBER_SESSION_KEY, JSON.stringify(nextSession))
-  }
+  }, [initialMemberId])
 
   const handleAdminLogout = async () => {
     await supabase.auth.signOut()
-    setAdminUser(null)
     setAdminProfile(null)
-    window.location.href = window.location.origin
+    setMode(initialMemberId ? 'member-access' : 'home')
   }
 
   const handleMemberLogout = () => {
-    localStorage.removeItem(MEMBER_SESSION_KEY)
+    localStorage.removeItem(MEMBER_STORAGE_KEY)
     setMemberSession(null)
-
-    if (memberIdFromUrl) {
-      window.location.href = `${window.location.origin}?member=${memberIdFromUrl}`
-    } else {
-      window.location.href = window.location.origin
-    }
+    setMode(initialMemberId ? 'member-access' : 'home')
   }
 
-  if (booting) {
+  if (loading) {
     return (
-      <div className="entry-shell">
-        <div className="entry-header">
-          <img src={logo} alt="더피트니스 화정점 로고" className="main-logo" />
-          <h1>더피트니스 화정점</h1>
-          <p>로그인 상태를 확인하는 중입니다.</p>
-        </div>
+      <div className="app-shell center-screen">
+        <div className="loading-card">로딩 중...</div>
       </div>
     )
   }
 
-  if (adminUser && adminProfile) {
+  if (mode === 'admin' && adminProfile) {
     return (
-      <AdminDashboard
-        user={adminUser}
-        profile={adminProfile}
-        onLogout={handleAdminLogout}
-      />
+      <div className="app-shell">
+        <AdminDashboard profile={adminProfile} onLogout={handleAdminLogout} />
+      </div>
     )
   }
 
-  if (memberSession?.member && memberSession?.accessCode) {
+  if (mode === 'member' && memberSession) {
     return (
-      <MemberDashboard
-        member={memberSession.member}
-        accessCode={memberSession.accessCode}
-        onLogout={handleMemberLogout}
-      />
+      <div className="app-shell">
+        <MemberDashboard
+          member={memberSession.member}
+          accessCode={memberSession.accessCode}
+          onLogout={handleMemberLogout}
+        />
+      </div>
     )
   }
 
-  if (memberIdFromUrl) {
+  if (mode === 'admin-login') {
     return (
-      <div className="entry-shell">
-        <div className="entry-header">
-          <img src={logo} alt="더피트니스 화정점 로고" className="main-logo" />
-          <h1>더피트니스 화정점</h1>
-          <p>회원 전용 링크로 접속했습니다. 입장 코드를 입력해 주세요.</p>
-        </div>
+      <div className="app-shell center-screen">
+        <AdminLogin
+          onLogin={(profile) => {
+            setAdminProfile(profile)
+            setMode('admin')
+          }}
+          onBack={() => setMode('home')}
+        />
+      </div>
+    )
+  }
 
-        <div className="entry-grid single">
-          <MemberEntry
-            memberIdFromUrl={memberIdFromUrl}
-            onMemberLogin={handleMemberLogin}
-          />
-        </div>
+  if (mode === 'member-access') {
+    return (
+      <div className="app-shell center-screen">
+        <MemberAccess
+          initialMemberId={initialMemberId}
+          onSuccess={(sessionData) => {
+            setMemberSession(sessionData)
+            setMode('member')
+          }}
+          onBack={() => setMode('home')}
+        />
       </div>
     )
   }
 
   return (
-    <div className="entry-shell">
-      <div className="entry-header">
-        <img src={logo} alt="더피트니스 화정점 로고" className="main-logo" />
-        <h1>더피트니스 화정점</h1>
-        <p>관리자용 회원 관리 화면과 회원 전용 확인 화면입니다.</p>
-      </div>
+    <div className="app-shell center-screen">
+      <div className="choice-grid">
+        <div className="auth-card auth-card-large">
+          <BrandHeader large />
+          <h1>시작하기</h1>
+          <p className="sub-text">관리자 또는 회원으로 입장할 수 있습니다.</p>
 
-      <div className="entry-grid">
-        <AdminLogin onAdminLogin={handleAdminLogin} />
-        <MemberEntry onMemberLogin={handleMemberLogin} />
+          <div className="stack-gap">
+            <button className="primary-btn" onClick={() => setMode('admin-login')}>
+              관리자 입장
+            </button>
+            <button className="secondary-btn" onClick={() => setMode('member-access')}>
+              회원 입장
+            </button>
+          </div>
+        </div>
+
+        <div className="info-card">
+          <h2>입장 안내</h2>
+          <ul className="info-list">
+            <li>관리자: 이메일 / 비밀번호 로그인</li>
+            <li>회원: URL의 member 값 + access code</li>
+            <li>새로고침 시 세션 유지</li>
+          </ul>
+        </div>
       </div>
     </div>
   )
