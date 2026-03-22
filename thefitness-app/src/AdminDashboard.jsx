@@ -1,1351 +1,1380 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from './supabase'
-import './style.css'
+import logo from './assets/logo.png'
 
-const bodyPartOptions = ['가슴', '어깨', '팔', '등', '하체', '스트레칭&재활', '유산소']
-const equipmentTypeOptions = [
-  '플레이트머신',
-  '핀머신',
-  '프리웨이트',
-  '기타웨이트',
-  '랙',
-  '유산소기구',
-  '소도구',
-  '스트레칭&재활',
-]
-const adminTabs = ['회원', '기록작성', '운동DB', '식단', '통계', '사용방법']
-
-const routineDays = [
-  { dayKey: 'mon', dayLabel: '월요일' },
-  { dayKey: 'tue', dayLabel: '화요일' },
-  { dayKey: 'wed', dayLabel: '수요일' },
-  { dayKey: 'thu', dayLabel: '목요일' },
-  { dayKey: 'fri', dayLabel: '금요일' },
-  { dayKey: 'sat', dayLabel: '토요일' },
-  { dayKey: 'sun', dayLabel: '일요일' },
+const TABS = [
+  '회원',
+  '기록작성',
+  '운동DB',
+  '식단',
+  '통계',
+  '코치스케줄',
+  '매출기록',
+  '프로그램',
+  '공지사항',
+  '사용방법',
 ]
 
-function makeAccessCode() {
-  return Math.random().toString(36).slice(2, 8).toUpperCase()
+const emptyMemberForm = {
+  name: '',
+  goal: '',
+  total_sessions: 20,
+  used_sessions: 0,
+  start_date: '',
+  end_date: '',
+  memo: '',
+  access_code: '',
+  current_program_id: '',
 }
 
-function getKoreaDateString() {
-  const now = new Date()
-  const korea = new Date(now.getTime() + 9 * 60 * 60 * 1000)
-  return korea.toISOString().slice(0, 10)
+const emptyWorkoutItem = {
+  exercise_id: '',
+  exercise_name_snapshot: '',
+  sets: [{ kg: '', reps: '' }],
 }
 
-function normalizeSetNumbers(sets = []) {
-  return sets.map((setRow, index) => ({
-    ...setRow,
-    setNo: index + 1,
-  }))
+const emptyWorkoutForm = {
+  id: null,
+  member_id: '',
+  workout_date: new Date().toISOString().slice(0, 10),
+  workout_type: 'pt',
+  good: '',
+  improve: '',
+  items: [{ ...emptyWorkoutItem }],
 }
 
-function groupWorkoutItems(items = []) {
-  const map = new Map()
+const emptyBrandForm = { name: '' }
 
-  items.forEach((row) => {
-    const key = [
-      row.exercise_name || '',
-      row.body_part || '',
-      row.category || '',
-      row.brand || '',
-      row.good_point || '',
-      row.improve_point || '',
-    ].join('||')
-
-    if (!map.has(key)) {
-      map.set(key, {
-        id: key,
-        exerciseName: row.exercise_name || '',
-        bodyPart: row.body_part || '',
-        equipmentType: row.category || '',
-        brand: row.brand || '',
-        goodPoint: row.good_point || '',
-        improvePoint: row.improve_point || '',
-        sets: [],
-      })
-    }
-
-    map.get(key).sets.push({
-      id: row.id || `${key}-${row.set_no}`,
-      setNo: Number(row.set_no || 0),
-      kg: Number(row.kg || 0),
-      reps: Number(row.reps || 0),
-    })
-  })
-
-  return Array.from(map.values()).map((item) => ({
-    ...item,
-    sets: [...item.sets].sort((a, b) => a.setNo - b.setNo),
-  }))
+const emptyExerciseForm = {
+  name: '',
+  body_part: '',
+  category: '',
+  brand_id: '',
 }
 
-function createDefaultRoutineRows() {
-  return routineDays.map((day, index) => ({
-    id: `routine-${day.dayKey}-${index}`,
-    dayKey: day.dayKey,
-    dayLabel: day.dayLabel,
-    title: '',
-    exercisesText: '',
-  }))
+const defaultBulkExerciseText = `뉴텍|시티드 디클라인 체스트 프레스|가슴|머신
+뉴텍|시티드 체스트 프레스|가슴|머신
+뉴텍|펙덱 플라이|가슴|머신`
+
+const timeSlotOptions = [
+  '09:00',
+  '10:00',
+  '11:00',
+  '12:00',
+  '13:00',
+  '14:00',
+  '15:00',
+  '16:00',
+  '17:00',
+  '18:00',
+  '19:00',
+  '20:00',
+]
+
+const emptyProgramForm = {
+  id: null,
+  name: '',
+  price: '',
+  session_count: '',
+  description: '',
+  is_vip: false,
+  is_active: true,
 }
 
-function parseBulkExerciseText(text) {
-  const lines = text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-
-  return lines
-    .map((line) => {
-      const parts = line.split('/').map((v) => v.trim())
-      if (parts.length < 4) return null
-
-      const [brand, equipmentType, bodyPart, name] = parts
-      if (!brand || !equipmentType || !bodyPart || !name) return null
-
-      return {
-        brand,
-        equipmentType,
-        bodyPart,
-        name,
-      }
-    })
-    .filter(Boolean)
+const emptyNoticeForm = {
+  id: null,
+  title: '',
+  content: '',
+  category: '공지',
+  image_url: '',
+  video_url: '',
+  is_published: true,
+  starts_at: '',
+  ends_at: '',
 }
 
-export default function AdminDashboard({ user, profile, onLogout }) {
-  const getDefaultBrandName = (brandRows = []) => {
-    if (!brandRows || brandRows.length === 0) return '기본'
-    if (brandRows.some((brand) => brand.name === '기본')) return '기본'
-    return brandRows[0]?.name || '기본'
-  }
+const emptySaleForm = {
+  id: null,
+  member_id: '',
+  program_id: '',
+  sale_date: new Date().toISOString().slice(0, 10),
+  amount: '',
+  payment_method: '카드',
+  installment_months: 0,
+  cash_receipt_issued: false,
+  purchased_session_count: 0,
+  service_session_count: 0,
+  is_vip: false,
+  memo: '',
+}
 
-  const createWorkoutItem = (defaultBrand = '기본') => ({
-    id: `wi-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    equipmentType: '핀머신',
-    bodyPart: '등',
-    brand: defaultBrand,
-    exerciseName: '',
-    sets: [{ setNo: 1, kg: 0, reps: 0 }],
-    goodPoint: '',
-    improvePoint: '',
-  })
+function randomCode() {
+  return Math.random().toString(36).slice(2, 10).toUpperCase()
+}
 
+function formatDate(value) {
+  return value || '-'
+}
+
+function getTotalSetCount(items = []) {
+  return items.reduce((sum, item) => sum + (item.sets?.length || 0), 0)
+}
+
+function normalizeSets(sets = []) {
+  return sets
+    .filter((setRow) => setRow.kg !== '' || setRow.reps !== '')
+    .map((setRow) => ({
+      kg: String(setRow.kg ?? ''),
+      reps: String(setRow.reps ?? ''),
+    }))
+}
+
+function getMonthKey(dateString) {
+  return (dateString || '').slice(0, 7)
+}
+
+export default function AdminDashboard({ profile, onLogout }) {
   const [activeTab, setActiveTab] = useState('회원')
+  const [loading, setLoading] = useState(true)
+  const [message, setMessage] = useState('')
 
   const [members, setMembers] = useState([])
-  const [loadingMembers, setLoadingMembers] = useState(true)
   const [selectedMemberId, setSelectedMemberId] = useState('')
+  const [memberForm, setMemberForm] = useState(emptyMemberForm)
+  const [editingMemberId, setEditingMemberId] = useState(null)
+
+  const [memberHealthLogs, setMemberHealthLogs] = useState([])
+  const [collapsedHealthLogs, setCollapsedHealthLogs] = useState({})
+  const [adminNotes, setAdminNotes] = useState([])
+  const [adminNoteInput, setAdminNoteInput] = useState('')
+
+  const [workouts, setWorkouts] = useState([])
+  const [workoutItemsMap, setWorkoutItemsMap] = useState({})
+  const [collapsedWorkouts, setCollapsedWorkouts] = useState({})
+  const [workoutForm, setWorkoutForm] = useState(emptyWorkoutForm)
 
   const [brands, setBrands] = useState([])
-  const [loadingBrands, setLoadingBrands] = useState(false)
-  const [brandForm, setBrandForm] = useState('')
+  const [brandForm, setBrandForm] = useState(emptyBrandForm)
+  const [editingBrandId, setEditingBrandId] = useState(null)
 
   const [exercises, setExercises] = useState([])
-  const [loadingExercises, setLoadingExercises] = useState(false)
+  const [exerciseForm, setExerciseForm] = useState(emptyExerciseForm)
+  const [editingExerciseId, setEditingExerciseId] = useState(null)
   const [exerciseSearch, setExerciseSearch] = useState('')
-  const [bulkExerciseText, setBulkExerciseText] = useState('')
-  const [bulkImporting, setBulkImporting] = useState(false)
-
-  const [workoutHistory, setWorkoutHistory] = useState([])
-  const [editingWorkoutId, setEditingWorkoutId] = useState(null)
-  const [expandedWorkoutIds, setExpandedWorkoutIds] = useState([])
+  const [collapsedExercises, setCollapsedExercises] = useState({})
+  const [bulkExerciseText, setBulkExerciseText] = useState(defaultBulkExerciseText)
+  const [showBulkInput, setShowBulkInput] = useState(false)
 
   const [dietLogs, setDietLogs] = useState([])
-  const [loadingDietLogs, setLoadingDietLogs] = useState(false)
-  const [dietDateFilter, setDietDateFilter] = useState(getKoreaDateString().slice(0, 7))
-  const [dietFeedbackDrafts, setDietFeedbackDrafts] = useState({})
-  const [savingDietFeedbackId, setSavingDietFeedbackId] = useState('')
-  const [expandedDietIds, setExpandedDietIds] = useState([])
+  const [collapsedDiets, setCollapsedDiets] = useState({})
+  const [dietMemberFilter, setDietMemberFilter] = useState('')
 
-  const [memberForm, setMemberForm] = useState({
-    name: '',
-    goal: '',
-    total_sessions: 20,
-    used_sessions: 0,
-    start_date: '',
-    end_date: '',
+  const [routineForm, setRoutineForm] = useState({ title: '루틴', content: '' })
+  const [manualTarget, setManualTarget] = useState('member')
+  const [manualForm, setManualForm] = useState({ title: '', content: '' })
+  const [manuals, setManuals] = useState([])
+
+  const [coaches, setCoaches] = useState([])
+  const [selectedCoachId, setSelectedCoachId] = useState('')
+  const [scheduleMonth, setScheduleMonth] = useState(new Date().toISOString().slice(0, 7))
+  const [scheduleForm, setScheduleForm] = useState({
+    schedule_date: new Date().toISOString().slice(0, 10),
+    is_working: true,
+    is_weekend_work: false,
+    work_start: '09:00',
+    work_end: '18:00',
     memo: '',
+    selectedSlots: ['10:00', '11:00', '14:00', '15:00'],
   })
+  const [coachSchedules, setCoachSchedules] = useState([])
+  const [coachScheduleSlotsMap, setCoachScheduleSlotsMap] = useState({})
+  const [collapsedSchedules, setCollapsedSchedules] = useState({})
 
-  const [editMemberId, setEditMemberId] = useState(null)
-  const [editMemberForm, setEditMemberForm] = useState({
-    name: '',
-    goal: '',
-    total_sessions: 20,
-    start_date: '',
-    end_date: '',
-    memo: '',
-  })
+  const [programs, setPrograms] = useState([])
+  const [programForm, setProgramForm] = useState(emptyProgramForm)
+  const [editingProgramId, setEditingProgramId] = useState(null)
 
-  const [exerciseForm, setExerciseForm] = useState({
-    name: '',
-    bodyPart: '등',
-    equipmentType: '핀머신',
-    brand: '기본',
-  })
+  const [salesRecords, setSalesRecords] = useState([])
+  const [saleForm, setSaleForm] = useState(emptySaleForm)
+  const [editingSaleId, setEditingSaleId] = useState(null)
+  const [saleMonth, setSaleMonth] = useState(new Date().toISOString().slice(0, 7))
+  const [salesSummary, setSalesSummary] = useState(null)
 
-  const [editExerciseId, setEditExerciseId] = useState('')
-  const [editExerciseForm, setEditExerciseForm] = useState({
-    name: '',
-    bodyPart: '등',
-    equipmentType: '핀머신',
-    brand: '기본',
-  })
+  const [notices, setNotices] = useState([])
+  const [noticeForm, setNoticeForm] = useState(emptyNoticeForm)
+  const [editingNoticeId, setEditingNoticeId] = useState(null)
+  const [collapsedNotices, setCollapsedNotices] = useState({})
 
-  const [editBrandId, setEditBrandId] = useState('')
-  const [editBrandForm, setEditBrandForm] = useState({ name: '' })
+  const selectedMember = useMemo(
+    () => members.find((member) => member.id === selectedMemberId) || null,
+    [members, selectedMemberId],
+  )
 
-  const [workoutDraft, setWorkoutDraft] = useState({
-    date: getKoreaDateString(),
-    bodyParts: [],
-    items: [createWorkoutItem('기본')],
-  })
+  const selectedCoach = useMemo(
+    () => coaches.find((coach) => coach.id === selectedCoachId) || null,
+    [coaches, selectedCoachId],
+  )
 
-  const [routineRows, setRoutineRows] = useState(createDefaultRoutineRows())
-  const [loadingRoutines, setLoadingRoutines] = useState(false)
-  const [savingRoutines, setSavingRoutines] = useState(false)
-
-  const [manualTitle, setManualTitle] = useState('')
-  const [manualContent, setManualContent] = useState('')
-  const [loadingManual, setLoadingManual] = useState(false)
-  const [savingManual, setSavingManual] = useState(false)
-
-  const resetWorkoutDraft = (brandRows = brands) => {
-    setWorkoutDraft({
-      date: getKoreaDateString(),
-      bodyParts: [],
-      items: [createWorkoutItem(getDefaultBrandName(brandRows))],
+  const filteredExercises = useMemo(() => {
+    const keyword = exerciseSearch.trim().toLowerCase()
+    if (!keyword) return exercises
+    return exercises.filter((exercise) => {
+      const brandName = exercise.brands?.name || ''
+      return (
+        exercise.name.toLowerCase().includes(keyword) ||
+        (exercise.body_part || '').toLowerCase().includes(keyword) ||
+        (exercise.category || '').toLowerCase().includes(keyword) ||
+        brandName.toLowerCase().includes(keyword)
+      )
     })
-    setEditingWorkoutId(null)
-  }
+  }, [exerciseSearch, exercises])
 
-  const resetMemberForm = () => {
-    setMemberForm({
-      name: '',
-      goal: '',
-      total_sessions: 20,
-      used_sessions: 0,
-      start_date: '',
-      end_date: '',
-      memo: '',
-    })
-  }
-
-  const resetExerciseForm = (brandRows = brands) => {
-    setExerciseForm({
-      name: '',
-      bodyPart: '등',
-      equipmentType: '핀머신',
-      brand: getDefaultBrandName(brandRows),
-    })
-  }
-
-  const loadMembers = async () => {
-    setLoadingMembers(true)
-
-    const { data, error } = await supabase
-      .from('members')
-      .select('*')
-      .eq('teacher_id', user.id)
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      alert(`회원 목록 불러오기 오류: ${error.message}`)
-      setLoadingMembers(false)
-      return
-    }
-
-    const rows = data || []
-    setMembers(rows)
-
-    if (!selectedMemberId && rows.length > 0) setSelectedMemberId(rows[0].id)
-    if (selectedMemberId && !rows.find((m) => m.id === selectedMemberId)) {
-      setSelectedMemberId(rows[0]?.id || '')
-    }
-
-    setLoadingMembers(false)
-  }
-
-  const loadBrands = async () => {
-    setLoadingBrands(true)
-
-    const { data, error } = await supabase
-      .from('brands')
-      .select('*')
-      .order('sort_order', { ascending: true })
-      .order('created_at', { ascending: true })
-
-    if (error) {
-      alert(`브랜드 불러오기 오류: ${error.message}`)
-      setLoadingBrands(false)
-      return
-    }
-
-    setBrands(data || [])
-    setLoadingBrands(false)
-  }
-
-  const loadExercises = async () => {
-    setLoadingExercises(true)
-
-    const { data, error } = await supabase
-      .from('exercises')
-      .select('*')
-      .order('sort_order', { ascending: true })
-      .order('created_at', { ascending: true })
-
-    if (error) {
-      alert(`운동DB 불러오기 오류: ${error.message}`)
-      setLoadingExercises(false)
-      return
-    }
-
-    setExercises(data || [])
-    setLoadingExercises(false)
-  }
-
-  const loadManual = async () => {
-    setLoadingManual(true)
-
-    const { data, error } = await supabase
-      .from('app_manuals')
-      .select('*')
-      .eq('manual_key', 'common')
-      .maybeSingle()
-
-    if (error) {
-      alert(`메뉴얼 불러오기 오류: ${error.message}`)
-      setLoadingManual(false)
-      return
-    }
-
-    setManualTitle(data?.title || '더피트니스 화정점 사용방법')
-    setManualContent(data?.content || '')
-    setLoadingManual(false)
-  }
-
-  const loadWorkoutHistory = async (memberId) => {
-    if (!memberId) {
-      setWorkoutHistory([])
-      return
-    }
-
-    const { data, error } = await supabase
-      .from('workouts')
-      .select(`
-        *,
-        workout_items (*)
-      `)
-      .eq('member_id', memberId)
-      .order('workout_date', { ascending: false })
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      alert(`운동 기록 불러오기 오류: ${error.message}`)
-      return
-    }
-
-    setWorkoutHistory(data || [])
-  }
-
-  const loadDietLogs = async (memberId, monthFilter = dietDateFilter) => {
-    if (!memberId) {
-      setDietLogs([])
-      return
-    }
-
-    setLoadingDietLogs(true)
-
-    let query = supabase
-      .from('diet_logs')
-      .select('*')
-      .eq('member_id', memberId)
-      .order('date', { ascending: false })
-      .order('meal_time', { ascending: false, nullsFirst: false })
-      .order('created_at', { ascending: false })
-
-    if (monthFilter) {
-      const start = `${monthFilter}-01`
-      const endDate = new Date(`${monthFilter}-01T00:00:00`)
-      endDate.setMonth(endDate.getMonth() + 1)
-      const end = endDate.toISOString().slice(0, 10)
-
-      query = query.gte('date', start).lt('date', end)
-    }
-
-    const { data, error } = await query
-
-    if (error) {
-      alert(`식단 기록 불러오기 오류: ${error.message}`)
-      setLoadingDietLogs(false)
-      return
-    }
-
-    setDietLogs(data || [])
-    const drafts = {}
-    ;(data || []).forEach((row) => {
-      drafts[row.id] = row.feedback || ''
-    })
-    setDietFeedbackDrafts(drafts)
-    setLoadingDietLogs(false)
-  }
-
-  const loadMemberRoutines = async (memberId) => {
-    if (!memberId) {
-      setRoutineRows(createDefaultRoutineRows())
-      return
-    }
-
-    setLoadingRoutines(true)
-
-    const { data, error } = await supabase
-      .from('member_routines')
-      .select('*')
-      .eq('member_id', memberId)
-      .order('sort_order', { ascending: true })
-
-    if (error) {
-      setLoadingRoutines(false)
-      alert(`루틴 불러오기 오류: ${error.message}`)
-      return
-    }
-
-    const defaults = createDefaultRoutineRows()
-    const map = new Map((data || []).map((row) => [row.day_key, row]))
-
-    const merged = defaults.map((day) => {
-      const saved = map.get(day.dayKey)
+  const memberStats = useMemo(() => {
+    return members.map((member) => {
+      const memberWorkouts = workouts.filter((workout) => workout.member_id === member.id)
+      const ptCount = memberWorkouts.filter((workout) => workout.workout_type === 'pt').length
+      const personalCount = memberWorkouts.filter((workout) => workout.workout_type === 'personal').length
+      const remainingSessions = Math.max(
+        Number(member.total_sessions || 0) - Number(member.used_sessions || 0),
+        0,
+      )
       return {
-        ...day,
-        title: saved?.title || '',
-        exercisesText: Array.isArray(saved?.exercises) ? saved.exercises.join(', ') : '',
+        ...member,
+        ptCount,
+        personalCount,
+        remainingSessions,
       }
     })
+  }, [members, workouts])
 
-    setRoutineRows(merged)
-    setLoadingRoutines(false)
-  }
-
-  const syncMemberSessionCount = async (memberId) => {
-    if (!memberId) return null
-
-    const { count, error } = await supabase
-      .from('workouts')
-      .select('*', { count: 'exact', head: true })
-      .eq('member_id', memberId)
-      .eq('workout_type', 'pt')
-
-    if (error) {
-      alert(`세션 동기화 오류: ${error.message}`)
-      return null
+  const monthlyStats = useMemo(() => {
+    const monthKey = new Date().toISOString().slice(0, 7)
+    const monthWorkouts = workouts.filter((workout) =>
+      (workout.workout_date || '').startsWith(monthKey),
+    )
+    return {
+      ptCount: monthWorkouts.filter((workout) => workout.workout_type === 'pt').length,
+      personalCount: monthWorkouts.filter((workout) => workout.workout_type === 'personal').length,
+      remainingSessions: members.reduce(
+        (sum, member) =>
+          sum + Math.max(Number(member.total_sessions || 0) - Number(member.used_sessions || 0), 0),
+        0,
+      ),
     }
+  }, [workouts, members])
 
-    const usedCount = count || 0
+  const filteredSchedules = useMemo(() => {
+    return coachSchedules.filter((schedule) => getMonthKey(schedule.schedule_date) === scheduleMonth)
+  }, [coachSchedules, scheduleMonth])
 
-    const { error: updateError } = await supabase
-      .from('members')
-      .update({ used_sessions: usedCount })
-      .eq('id', memberId)
-
-    if (updateError) {
-      alert(`세션 업데이트 오류: ${updateError.message}`)
-      return null
-    }
-
-    return usedCount
-  }
+  const filteredSales = useMemo(() => {
+    return salesRecords.filter((sale) => getMonthKey(sale.sale_date) === saleMonth)
+  }, [salesRecords, saleMonth])
 
   useEffect(() => {
-    loadMembers()
-    loadBrands()
-    loadExercises()
-    loadManual()
+    loadAll()
   }, [])
 
   useEffect(() => {
-    loadWorkoutHistory(selectedMemberId)
-    loadMemberRoutines(selectedMemberId)
-    loadDietLogs(selectedMemberId, dietDateFilter)
-    resetWorkoutDraft()
-    setExpandedDietIds([])
+    const found = manuals.find((manual) => manual.target_role === manualTarget)
+    if (found) {
+      setManualForm({
+        title: found.title || '',
+        content: found.content || '',
+      })
+    } else {
+      setManualForm({ title: '', content: '' })
+    }
+  }, [manualTarget, manuals])
+
+  useEffect(() => {
+    if (!selectedMemberId) {
+      setRoutineForm({ title: '루틴', content: '' })
+      setAdminNotes([])
+      setMemberHealthLogs([])
+      setAdminNoteInput('')
+      return
+    }
+    loadRoutine(selectedMemberId)
+    loadAdminNotes(selectedMemberId)
+    loadHealthLogs(selectedMemberId)
   }, [selectedMemberId])
 
   useEffect(() => {
-    if (activeTab === '식단') {
-      loadDietLogs(selectedMemberId, dietDateFilter)
-    }
-  }, [dietDateFilter, activeTab])
+    loadSalesSummary(saleMonth)
+  }, [saleMonth])
 
-  useEffect(() => {
-    const defaultBrand = getDefaultBrandName(brands)
+  const loadAll = async () => {
+    setLoading(true)
+    setMessage('')
 
-    setExerciseForm((prev) => ({
-      ...prev,
-      brand: prev.brand || defaultBrand,
-    }))
-
-    setEditExerciseForm((prev) => ({
-      ...prev,
-      brand: prev.brand || defaultBrand,
-    }))
-
-    setWorkoutDraft((prev) => ({
-      ...prev,
-      items:
-        prev.items?.length > 0
-          ? prev.items.map((item) => ({
-              ...item,
-              brand: item.brand || defaultBrand,
-            }))
-          : [createWorkoutItem(defaultBrand)],
-    }))
-  }, [brands])
-
-  const selectedMember = useMemo(() => {
-    return members.find((m) => m.id === selectedMemberId) || null
-  }, [members, selectedMemberId])
-
-  const brandNames = useMemo(() => {
-    if (brands.length === 0) return ['기본']
-    return brands.map((b) => b.name)
-  }, [brands])
-
-  const filteredExercises = useMemo(() => {
-    const q = exerciseSearch.trim().toLowerCase()
-    if (!q) return exercises
-
-    return exercises.filter((e) =>
-      [e.name, e.body_part, e.category, e.brand_name].join(' ').toLowerCase().includes(q)
-    )
-  }, [exercises, exerciseSearch])
-
-  const progress = selectedMember
-    ? Math.round((selectedMember.used_sessions / Math.max(selectedMember.total_sessions, 1)) * 100)
-    : 0
-
-  const currentMonth = getKoreaDateString().slice(0, 7)
-  const currentMonthHistory = workoutHistory.filter((w) => (w.workout_date || '').slice(0, 7) === currentMonth)
-  const currentMonthPtCount = currentMonthHistory.filter((w) => (w.workout_type || 'pt') === 'pt').length
-  const currentMonthSelfCount = currentMonthHistory.filter((w) => (w.workout_type || 'pt') === 'self').length
-  const currentMonthTotal = currentMonthHistory.length
-
-  const dietSummary = useMemo(() => {
-    const totalMeals = dietLogs.length
-    const avgCarbs =
-      totalMeals > 0
-        ? Math.round(dietLogs.reduce((sum, row) => sum + (Number(row.carbs) || 0), 0) / totalMeals)
-        : 0
-    const avgProtein =
-      totalMeals > 0
-        ? Math.round(dietLogs.reduce((sum, row) => sum + (Number(row.protein) || 0), 0) / totalMeals)
-        : 0
-    const avgFat =
-      totalMeals > 0
-        ? Math.round(dietLogs.reduce((sum, row) => sum + (Number(row.fat) || 0), 0) / totalMeals)
-        : 0
-
-    return { totalMeals, avgCarbs, avgProtein, avgFat }
-  }, [dietLogs])
-
-  const toggleWorkoutDetail = (workoutId) => {
-    setExpandedWorkoutIds((prev) =>
-      prev.includes(workoutId)
-        ? prev.filter((id) => id !== workoutId)
-        : [...prev, workoutId]
-    )
-  }
-
-  const toggleDietDetail = (dietId) => {
-    setExpandedDietIds((prev) =>
-      prev.includes(dietId)
-        ? prev.filter((id) => id !== dietId)
-        : [...prev, dietId]
-    )
-  }
-
-  const addMember = async () => {
-    if (!memberForm.name.trim()) {
-      alert('회원 이름을 입력해 주세요.')
-      return
-    }
-
-    const accessCode = makeAccessCode()
-
-    const { error } = await supabase.from('members').insert([
-      {
-        teacher_id: user.id,
-        name: memberForm.name.trim(),
-        goal: memberForm.goal,
-        total_sessions: Number(memberForm.total_sessions) || 0,
-        used_sessions: 0,
-        start_date: memberForm.start_date || null,
-        end_date: memberForm.end_date || null,
-        memo: memberForm.memo,
-        access_code: accessCode,
-      },
+    await Promise.all([
+      loadMembers(),
+      loadBrands(),
+      loadExercises(),
+      loadWorkouts(),
+      loadDietLogs(),
+      loadManuals(),
+      loadCoaches(),
+      loadCoachSchedules(),
+      loadPrograms(),
+      loadSalesRecords(),
+      loadNotices(),
     ])
 
-    if (error) {
-      alert(`회원 추가 오류: ${error.message}`)
+    setLoading(false)
+  }
+
+  const loadMembers = async () => {
+    const { data } = await supabase
+      .from('members')
+      .select('*, programs(id, name)')
+      .order('created_at', { ascending: false })
+
+    if (data) {
+      setMembers(data)
+      if (!selectedMemberId && data[0]) setSelectedMemberId(data[0].id)
+    }
+  }
+
+  const loadHealthLogs = async (memberId) => {
+    const { data } = await supabase
+      .from('member_health_logs')
+      .select('*')
+      .eq('member_id', memberId)
+      .order('record_date', { ascending: false })
+      .order('created_at', { ascending: false })
+
+    const collapsed = {}
+    ;(data || []).forEach((item) => {
+      collapsed[item.id] = true
+    })
+    setMemberHealthLogs(data || [])
+    setCollapsedHealthLogs(collapsed)
+  }
+
+  const loadAdminNotes = async (memberId) => {
+    const { data } = await supabase
+      .from('member_admin_notes')
+      .select('*')
+      .eq('member_id', memberId)
+      .order('updated_at', { ascending: false })
+      .order('created_at', { ascending: false })
+
+    setAdminNotes(data || [])
+  }
+
+  const loadBrands = async () => {
+    const { data } = await supabase.from('brands').select('*').order('name', { ascending: true })
+    if (data) setBrands(data)
+  }
+
+  const loadExercises = async () => {
+    const { data } = await supabase
+      .from('exercises')
+      .select('*, brands(id, name)')
+      .order('created_at', { ascending: false })
+
+    if (data) {
+      const collapsed = {}
+      data.forEach((exercise) => {
+        collapsed[exercise.id] = true
+      })
+      setExercises(data)
+      setCollapsedExercises(collapsed)
+    }
+  }
+
+  const loadWorkouts = async () => {
+    const { data: workoutData } = await supabase
+      .from('workouts')
+      .select('*')
+      .order('workout_date', { ascending: false })
+      .order('created_at', { ascending: false })
+
+    if (!workoutData) return
+
+    let itemMap = {}
+    const workoutIds = workoutData.map((workout) => workout.id)
+
+    if (workoutIds.length > 0) {
+      const { data: itemData } = await supabase
+        .from('workout_items')
+        .select('*')
+        .in('workout_id', workoutIds)
+        .order('sort_order', { ascending: true })
+
+      itemMap = (itemData || []).reduce((acc, item) => {
+        if (!acc[item.workout_id]) acc[item.workout_id] = []
+        acc[item.workout_id].push(item)
+        return acc
+      }, {})
+    }
+
+    const collapsed = {}
+    workoutData.forEach((workout) => {
+      collapsed[workout.id] = true
+    })
+
+    setWorkouts(workoutData)
+    setWorkoutItemsMap(itemMap)
+    setCollapsedWorkouts(collapsed)
+  }
+
+  const loadDietLogs = async () => {
+    const { data } = await supabase
+      .from('diet_logs')
+      .select('*')
+      .order('log_date', { ascending: false })
+      .order('created_at', { ascending: false })
+
+    if (data) {
+      const collapsed = {}
+      data.forEach((diet) => {
+        collapsed[diet.id] = true
+      })
+      setDietLogs(data)
+      setCollapsedDiets(collapsed)
+    }
+  }
+
+  const loadRoutine = async (memberId) => {
+    const { data } = await supabase
+      .from('member_routines')
+      .select('*')
+      .eq('member_id', memberId)
+      .maybeSingle()
+
+    if (data) {
+      setRoutineForm({
+        title: data.title || '루틴',
+        content: data.content || '',
+      })
+    } else {
+      setRoutineForm({ title: '루틴', content: '' })
+    }
+  }
+
+  const loadManuals = async () => {
+    const { data } = await supabase.from('app_manuals').select('*').order('target_role')
+    if (data) setManuals(data)
+  }
+
+  const loadCoaches = async () => {
+    const { data } = await supabase
+      .from('coaches')
+      .select('*')
+      .order('created_at', { ascending: true })
+
+    if (data) {
+      setCoaches(data)
+      if (!selectedCoachId && data[0]) setSelectedCoachId(data[0].id)
+    }
+  }
+
+  const loadCoachSchedules = async () => {
+    const { data: scheduleData } = await supabase
+      .from('coach_schedules')
+      .select('*')
+      .order('schedule_date', { ascending: false })
+
+    if (!scheduleData) return
+
+    let slotMap = {}
+    const scheduleIds = scheduleData.map((schedule) => schedule.id)
+
+    if (scheduleIds.length > 0) {
+      const { data: slotData } = await supabase
+        .from('coach_schedule_slots')
+        .select('*')
+        .in('schedule_id', scheduleIds)
+        .order('slot_time', { ascending: true })
+
+      slotMap = (slotData || []).reduce((acc, slot) => {
+        if (!acc[slot.schedule_id]) acc[slot.schedule_id] = []
+        acc[slot.schedule_id].push(slot)
+        return acc
+      }, {})
+    }
+
+    const collapsed = {}
+    scheduleData.forEach((schedule) => {
+      collapsed[schedule.id] = true
+    })
+
+    setCoachSchedules(scheduleData)
+    setCoachScheduleSlotsMap(slotMap)
+    setCollapsedSchedules(collapsed)
+  }
+
+  const loadPrograms = async () => {
+    const { data } = await supabase
+      .from('programs')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (data) setPrograms(data)
+  }
+
+  const loadSalesRecords = async () => {
+    const { data } = await supabase
+      .from('sales_records')
+      .select('*, members(id, name), programs(id, name)')
+      .order('sale_date', { ascending: false })
+      .order('created_at', { ascending: false })
+    if (data) setSalesRecords(data)
+  }
+
+  const loadSalesSummary = async (month) => {
+    const { data } = await supabase.rpc('get_sales_summary', { target_month: month })
+    if (data && data[0]) {
+      setSalesSummary(data[0])
+    } else {
+      setSalesSummary(null)
+    }
+  }
+
+  const loadNotices = async () => {
+    const { data } = await supabase
+      .from('notices')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (data) {
+      const collapsed = {}
+      data.forEach((notice) => {
+        collapsed[notice.id] = true
+      })
+      setNotices(data)
+      setCollapsedNotices(collapsed)
+    }
+  }
+
+  const resetMemberForm = () => {
+    setMemberForm(emptyMemberForm)
+    setEditingMemberId(null)
+  }
+
+  const handleMemberSubmit = async (e) => {
+    e.preventDefault()
+    setMessage('')
+
+    const payload = {
+      name: memberForm.name?.trim() || '',
+      goal: memberForm.goal?.trim() || '',
+      total_sessions: Number(memberForm.total_sessions) || 0,
+      used_sessions: Number(memberForm.used_sessions) || 0,
+      start_date: memberForm.start_date || null,
+      end_date: memberForm.end_date || null,
+      memo: memberForm.memo?.trim() || '',
+      access_code: (memberForm.access_code || randomCode()).trim().toUpperCase(),
+      current_program_id: memberForm.current_program_id || null,
+    }
+
+    if (!payload.name) {
+      setMessage('회원 이름을 입력해주세요.')
       return
+    }
+
+    if (editingMemberId) {
+      const { error } = await supabase.from('members').update(payload).eq('id', editingMemberId)
+      if (error) {
+        setMessage(error.message)
+        return
+      }
+      setMessage('회원 정보가 수정되었습니다.')
+    } else {
+      const { error } = await supabase.from('members').insert(payload)
+      if (error) {
+        setMessage(error.message)
+        return
+      }
+      setMessage('회원이 추가되었습니다.')
     }
 
     resetMemberForm()
     await loadMembers()
   }
 
-  const openMemberEdit = (memberRow) => {
-    setEditMemberId(memberRow.id)
-    setEditMemberForm({
-      name: memberRow.name || '',
-      goal: memberRow.goal || '',
-      total_sessions: memberRow.total_sessions || 20,
-      start_date: memberRow.start_date || '',
-      end_date: memberRow.end_date || '',
-      memo: memberRow.memo || '',
-    })
-    setActiveTab('회원')
-  }
-
-  const closeMemberEdit = () => {
-    setEditMemberId(null)
-    setEditMemberForm({
-      name: '',
-      goal: '',
-      total_sessions: 20,
-      start_date: '',
-      end_date: '',
-      memo: '',
+  const handleMemberEdit = (member) => {
+    setEditingMemberId(member.id)
+    setSelectedMemberId(member.id)
+    setMemberForm({
+      name: member.name || '',
+      goal: member.goal || '',
+      total_sessions: member.total_sessions || 0,
+      used_sessions: member.used_sessions || 0,
+      start_date: member.start_date || '',
+      end_date: member.end_date || '',
+      memo: member.memo || '',
+      access_code: member.access_code || '',
+      current_program_id: member.current_program_id || '',
     })
   }
 
-  const updateMember = async () => {
-    if (!editMemberId || !editMemberForm.name.trim()) {
-      alert('회원 이름을 입력해 주세요.')
-      return
+  const handleMemberDelete = async (memberId) => {
+    if (!window.confirm('회원을 삭제할까요?')) return
+    await supabase.from('members').delete().eq('id', memberId)
+    if (selectedMemberId === memberId) {
+      setSelectedMemberId('')
+      resetMemberForm()
+      setRoutineForm({ title: '루틴', content: '' })
+      setAdminNotes([])
+      setMemberHealthLogs([])
     }
-
-    const { error } = await supabase
-      .from('members')
-      .update({
-        name: editMemberForm.name.trim(),
-        goal: editMemberForm.goal,
-        total_sessions: Number(editMemberForm.total_sessions) || 0,
-        start_date: editMemberForm.start_date || null,
-        end_date: editMemberForm.end_date || null,
-        memo: editMemberForm.memo,
-      })
-      .eq('id', editMemberId)
-      .eq('teacher_id', user.id)
-
-    if (error) {
-      alert(`회원 수정 오류: ${error.message}`)
-      return
-    }
-
-    await syncMemberSessionCount(editMemberId)
-    await loadMembers()
-    closeMemberEdit()
+    await loadAll()
+    setMessage('회원이 삭제되었습니다.')
   }
 
-  const deleteMember = async (memberId) => {
-    if (!window.confirm('정말 이 회원을 삭제할까요?')) return
-
-    const { error } = await supabase
-      .from('members')
-      .delete()
-      .eq('id', memberId)
-      .eq('teacher_id', user.id)
-
-    if (error) {
-      alert(`회원 삭제 오류: ${error.message}`)
-      return
-    }
-
-    if (selectedMemberId === memberId) setSelectedMemberId('')
-    if (editMemberId === memberId) closeMemberEdit()
-
-    await loadMembers()
-  }
-
-  const addBrand = async () => {
-    const value = brandForm.trim()
-    if (!value) {
-      alert('브랜드 이름을 입력해 주세요.')
-      return
-    }
-
-    const duplicate = brands.some((brand) => brand.name === value)
-    if (duplicate) {
-      alert('이미 등록된 브랜드입니다.')
-      return
-    }
-
-    const { error } = await supabase.from('brands').insert([
-      { name: value, sort_order: brands.length + 1 },
-    ])
-
-    if (error) {
-      alert(`브랜드 추가 오류: ${error.message}`)
-      return
-    }
-
-    setBrandForm('')
-    await loadBrands()
-  }
-
-  const openBrandEdit = (brand) => {
-    setEditBrandId(brand.id)
-    setEditBrandForm({ name: brand.name })
-    setActiveTab('운동DB')
-  }
-
-  const closeBrandEdit = () => {
-    setEditBrandId('')
-    setEditBrandForm({ name: '' })
-  }
-
-  const updateBrand = async () => {
-    const newBrand = editBrandForm.name.trim()
-
-    if (!editBrandId || !newBrand) {
-      alert('브랜드 이름을 입력해 주세요.')
-      return
-    }
-
-    const oldBrand = brands.find((b) => b.id === editBrandId)
-    if (!oldBrand) return
-
-    const duplicate = brands.some((brand) => brand.id !== editBrandId && brand.name === newBrand)
-    if (duplicate) {
-      alert('같은 브랜드명이 이미 있습니다.')
-      return
-    }
-
-    const { error } = await supabase
-      .from('brands')
-      .update({ name: newBrand })
-      .eq('id', editBrandId)
-
-    if (error) {
-      alert(`브랜드 수정 오류: ${error.message}`)
-      return
-    }
-
-    if (oldBrand.name !== newBrand) {
-      const { error: exError } = await supabase
-        .from('exercises')
-        .update({ brand_name: newBrand })
-        .eq('brand_name', oldBrand.name)
-
-      if (exError) {
-        alert(`운동 브랜드명 동기화 오류: ${exError.message}`)
-        return
-      }
-    }
-
-    await loadBrands()
-    await loadExercises()
-    closeBrandEdit()
-  }
-
-  const deleteBrand = async (brand) => {
-    if (brand.name === '기본') {
-      alert('기본 브랜드는 삭제할 수 없습니다.')
-      return
-    }
-
-    if (!window.confirm(`"${brand.name}" 브랜드를 삭제할까요?\n연결된 운동은 "기본" 브랜드로 바뀝니다.`)) return
-
-    const { error: exError } = await supabase
-      .from('exercises')
-      .update({ brand_name: '기본' })
-      .eq('brand_name', brand.name)
-
-    if (exError) {
-      alert(`운동 브랜드 변경 오류: ${exError.message}`)
-      return
-    }
-
-    const { error } = await supabase.from('brands').delete().eq('id', brand.id)
-
-    if (error) {
-      alert(`브랜드 삭제 오류: ${error.message}`)
-      return
-    }
-
-    await loadBrands()
-    await loadExercises()
-
-    if (editBrandId === brand.id) closeBrandEdit()
-  }
-
-  const addExercise = async () => {
-    if (!exerciseForm.name.trim()) {
-      alert('운동명을 입력해 주세요.')
-      return
-    }
-
-    const duplicate = exercises.some(
-      (exercise) =>
-        exercise.name === exerciseForm.name.trim() &&
-        exercise.body_part === exerciseForm.bodyPart &&
-        exercise.category === exerciseForm.equipmentType &&
-        exercise.brand_name === (exerciseForm.brand || getDefaultBrandName(brands))
-    )
-
-    if (duplicate) {
-      alert('같은 조건의 운동이 이미 있습니다.')
-      return
-    }
-
-    const { error } = await supabase.from('exercises').insert([
-      {
-        name: exerciseForm.name.trim(),
-        body_part: exerciseForm.bodyPart,
-        category: exerciseForm.equipmentType,
-        brand_name: exerciseForm.brand || getDefaultBrandName(brands),
-        sort_order: exercises.length + 1,
-      },
-    ])
-
-    if (error) {
-      alert(`운동 추가 오류: ${error.message}`)
-      return
-    }
-
-    resetExerciseForm()
-    await loadExercises()
-  }
-
-  const importBulkExercises = async () => {
-    const parsed = parseBulkExerciseText(bulkExerciseText)
-
-    if (parsed.length === 0) {
-      alert('붙여넣은 형식을 확인해 주세요.\n예: 뉴텍 / 플레이트머신 / 가슴 / 시티드 체스트 프레스')
-      return
-    }
-
-    setBulkImporting(true)
-
+  const copyMemberLink = async (member) => {
+    const text = `${window.location.origin}?member=${member.id}\nAccess Code: ${member.access_code}`
     try {
-      const existingBrandNames = new Set(brands.map((b) => b.name))
-      const parsedBrandNames = [...new Set(parsed.map((row) => row.brand).filter(Boolean))]
-      const newBrands = parsedBrandNames.filter((name) => !existingBrandNames.has(name))
-
-      if (newBrands.length > 0) {
-        const { error: brandError } = await supabase.from('brands').insert(
-          newBrands.map((name, index) => ({
-            name,
-            sort_order: brands.length + index + 1,
-          }))
-        )
-
-        if (brandError) {
-          alert(`브랜드 자동추가 오류: ${brandError.message}`)
-          setBulkImporting(false)
-          return
-        }
-
-        await loadBrands()
-      }
-
-      const currentExercises = [...exercises]
-      const existingKeys = new Set(
-        currentExercises.map((row) =>
-          [row.name, row.body_part, row.category, row.brand_name].join('||')
-        )
-      )
-
-      const insertRows = parsed
-        .filter((row) => {
-          const key = [row.name, row.bodyPart, row.equipmentType, row.brand].join('||')
-          return !existingKeys.has(key)
-        })
-        .map((row, index) => ({
-          name: row.name,
-          body_part: row.bodyPart,
-          category: row.equipmentType,
-          brand_name: row.brand,
-          sort_order: currentExercises.length + index + 1,
-        }))
-
-      if (insertRows.length === 0) {
-        alert('새로 추가할 운동이 없습니다. 중복 항목만 있었습니다.')
-        setBulkImporting(false)
-        return
-      }
-
-      const { error: insertError } = await supabase.from('exercises').insert(insertRows)
-
-      if (insertError) {
-        alert(`운동 일괄추가 오류: ${insertError.message}`)
-        setBulkImporting(false)
-        return
-      }
-
-      await loadExercises()
-      setBulkExerciseText('')
-      alert(`${insertRows.length}개 운동을 추가했습니다.`)
-    } finally {
-      setBulkImporting(false)
+      await navigator.clipboard.writeText(text)
+      setMessage('회원 링크와 access code가 복사되었습니다.')
+    } catch {
+      setMessage('복사에 실패했습니다.')
     }
   }
 
-  const openExerciseEdit = (exercise) => {
-    setEditExerciseId(exercise.id)
-    setEditExerciseForm({
-      name: exercise.name || '',
-      bodyPart: exercise.body_part || '등',
-      equipmentType: exercise.category || '핀머신',
-      brand: exercise.brand_name || getDefaultBrandName(brands),
-    })
-    setActiveTab('운동DB')
-  }
-
-  const closeExerciseEdit = () => {
-    setEditExerciseId('')
-    setEditExerciseForm({
-      name: '',
-      bodyPart: '등',
-      equipmentType: '핀머신',
-      brand: getDefaultBrandName(brands),
-    })
-  }
-
-  const updateExercise = async () => {
-    if (!editExerciseId || !editExerciseForm.name.trim()) {
-      alert('운동명을 입력해 주세요.')
+  const handleAdminNoteSave = async () => {
+    if (!selectedMemberId || !adminNoteInput.trim()) {
+      setMessage('회원과 메모 내용을 확인해주세요.')
       return
     }
 
-    const duplicate = exercises.some(
-      (exercise) =>
-        exercise.id !== editExerciseId &&
-        exercise.name === editExerciseForm.name.trim() &&
-        exercise.body_part === editExerciseForm.bodyPart &&
-        exercise.category === editExerciseForm.equipmentType &&
-        exercise.brand_name === (editExerciseForm.brand || getDefaultBrandName(brands))
-    )
-
-    if (duplicate) {
-      alert('같은 조건의 운동이 이미 있습니다.')
-      return
-    }
-
-    const { error } = await supabase
-      .from('exercises')
-      .update({
-        name: editExerciseForm.name.trim(),
-        body_part: editExerciseForm.bodyPart,
-        category: editExerciseForm.equipmentType,
-        brand_name: editExerciseForm.brand || getDefaultBrandName(brands),
-      })
-      .eq('id', editExerciseId)
+    const { error } = await supabase.from('member_admin_notes').insert({
+      member_id: selectedMemberId,
+      admin_id: profile?.id || null,
+      note: adminNoteInput.trim(),
+    })
 
     if (error) {
-      alert(`운동 수정 오류: ${error.message}`)
+      setMessage(error.message)
       return
     }
 
-    await loadExercises()
-    closeExerciseEdit()
+    setAdminNoteInput('')
+    await loadAdminNotes(selectedMemberId)
+    setMessage('관리자 메모가 저장되었습니다.')
   }
 
-  const deleteExercise = async (exerciseId) => {
-    if (!window.confirm('이 운동을 삭제할까요?')) return
+  const handleAdminNoteDelete = async (noteId) => {
+    if (!window.confirm('이 메모를 삭제할까요?')) return
+    await supabase.from('member_admin_notes').delete().eq('id', noteId)
+    await loadAdminNotes(selectedMemberId)
+    setMessage('관리자 메모가 삭제되었습니다.')
+  }
 
-    const { error } = await supabase.from('exercises').delete().eq('id', exerciseId)
-
-    if (error) {
-      alert(`운동 삭제 오류: ${error.message}`)
+  const handleRoutineSave = async () => {
+    if (!selectedMemberId) {
+      setMessage('루틴을 저장할 회원을 먼저 선택해주세요.')
       return
     }
 
-    await loadExercises()
+    const payload = {
+      member_id: selectedMemberId,
+      title: routineForm.title?.trim() || '루틴',
+      content: routineForm.content?.trim() || '',
+    }
 
-    if (editExerciseId === exerciseId) closeExerciseEdit()
+    const { data: existing } = await supabase
+      .from('member_routines')
+      .select('id')
+      .eq('member_id', selectedMemberId)
+      .maybeSingle()
+
+    if (existing?.id) {
+      await supabase.from('member_routines').update(payload).eq('id', existing.id)
+    } else {
+      await supabase.from('member_routines').insert(payload)
+    }
+
+    setMessage('루틴이 저장되었습니다.')
+    await loadRoutine(selectedMemberId)
   }
 
-  const toggleBodyPart = (part) => {
-    setWorkoutDraft((prev) => ({
-      ...prev,
-      bodyParts: prev.bodyParts.includes(part)
-        ? prev.bodyParts.filter((p) => p !== part)
-        : [...prev.bodyParts, part],
-    }))
+  const handleRoutineDelete = async () => {
+    if (!selectedMemberId) {
+      setMessage('삭제할 회원을 먼저 선택해주세요.')
+      return
+    }
+    if (!window.confirm('이 회원의 루틴을 삭제할까요?')) return
+
+    await supabase.from('member_routines').delete().eq('member_id', selectedMemberId)
+    setRoutineForm({ title: '루틴', content: '' })
+    setMessage('루틴이 삭제되었습니다.')
+  }
+
+  const resetWorkoutForm = () => {
+    setWorkoutForm(emptyWorkoutForm)
+  }
+
+  const updateWorkoutItemSelect = (itemIndex, exerciseId) => {
+    const found = exercises.find((exercise) => String(exercise.id) === String(exerciseId))
+    setWorkoutForm((prev) => {
+      const nextItems = [...prev.items]
+      nextItems[itemIndex] = {
+        ...nextItems[itemIndex],
+        exercise_id: found?.id || '',
+        exercise_name_snapshot: found?.name || nextItems[itemIndex].exercise_name_snapshot,
+      }
+      return { ...prev, items: nextItems }
+    })
+  }
+
+  const updateWorkoutItemName = (itemIndex, value) => {
+    setWorkoutForm((prev) => {
+      const nextItems = [...prev.items]
+      nextItems[itemIndex] = {
+        ...nextItems[itemIndex],
+        exercise_name_snapshot: value,
+      }
+      return { ...prev, items: nextItems }
+    })
   }
 
   const addWorkoutItem = () => {
-    setWorkoutDraft((prev) => ({
+    setWorkoutForm((prev) => ({
       ...prev,
-      items: [...prev.items, createWorkoutItem(getDefaultBrandName(brands))],
+      items: [...prev.items, { ...emptyWorkoutItem }],
     }))
   }
 
-  const removeWorkoutItem = (index) => {
-    setWorkoutDraft((prev) => ({
+  const removeWorkoutItem = (itemIndex) => {
+    setWorkoutForm((prev) => ({
       ...prev,
-      items:
-        prev.items.length <= 1
-          ? prev.items
-          : prev.items.filter((_, i) => i !== index),
-    }))
-  }
-
-  const updateWorkoutItem = (index, patch) => {
-    setWorkoutDraft((prev) => ({
-      ...prev,
-      items: prev.items.map((item, i) => (i === index ? { ...item, ...patch } : item)),
+      items: prev.items.filter((_, idx) => idx !== itemIndex),
     }))
   }
 
   const addSet = (itemIndex) => {
-    setWorkoutDraft((prev) => ({
-      ...prev,
-      items: prev.items.map((item, i) =>
-        i === itemIndex
-          ? {
-              ...item,
-              sets: [...item.sets, { setNo: item.sets.length + 1, kg: 0, reps: 0 }],
-            }
-          : item
-      ),
-    }))
+    setWorkoutForm((prev) => {
+      const nextItems = [...prev.items]
+      nextItems[itemIndex] = {
+        ...nextItems[itemIndex],
+        sets: [...nextItems[itemIndex].sets, { kg: '', reps: '' }],
+      }
+      return { ...prev, items: nextItems }
+    })
   }
 
   const removeSet = (itemIndex, setIndex) => {
-    setWorkoutDraft((prev) => ({
-      ...prev,
-      items: prev.items.map((item, i) => {
-        if (i !== itemIndex) return item
-        if (item.sets.length <= 1) return item
-        const nextSets = item.sets.filter((_, j) => j !== setIndex)
-        return { ...item, sets: normalizeSetNumbers(nextSets) }
-      }),
-    }))
-  }
-
-  const updateSet = (itemIndex, setIndex, key, value) => {
-    setWorkoutDraft((prev) => ({
-      ...prev,
-      items: prev.items.map((item, i) =>
-        i === itemIndex
-          ? {
-              ...item,
-              sets: item.sets.map((setRow, j) =>
-                j === setIndex ? { ...setRow, [key]: Number(value) || 0 } : setRow
-              ),
-            }
-          : item
-      ),
-    }))
-  }
-
-  const applyExercise = (itemIndex, exercise) => {
-    updateWorkoutItem(itemIndex, {
-      exerciseName: exercise.name,
-      bodyPart: exercise.body_part,
-      equipmentType: exercise.category,
-      brand: exercise.brand_name,
-    })
-  }
-
-  const copyText = async (text) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      alert('복사 완료')
-    } catch {
-      alert('복사 실패')
-    }
-  }
-
-  const saveWorkoutRecord = async () => {
-    if (!selectedMemberId) {
-      alert('회원을 먼저 선택하세요.')
-      return
-    }
-
-    if (workoutDraft.items.length === 0) {
-      alert('운동 항목이 없습니다.')
-      return
-    }
-
-    const hasEmptyExercise = workoutDraft.items.some((item) => !item.exerciseName.trim())
-    if (hasEmptyExercise) {
-      alert('운동명을 입력해 주세요.')
-      return
-    }
-
-    const { data: workoutData, error: workoutError } = await supabase
-      .from('workouts')
-      .insert([
-        {
-          member_id: selectedMemberId,
-          workout_date: workoutDraft.date,
-          body_parts: workoutDraft.bodyParts,
-          workout_type: 'pt',
-        },
-      ])
-      .select()
-      .single()
-
-    if (workoutError) {
-      alert(`운동 저장 오류: ${workoutError.message}`)
-      return
-    }
-
-    const itemRows = workoutDraft.items.flatMap((item) =>
-      item.sets.map((setRow, index) => ({
-        workout_id: workoutData.id,
-        category: item.equipmentType,
-        body_part: item.bodyPart,
-        brand: item.brand,
-        exercise_name: item.exerciseName,
-        set_no: index + 1,
-        kg: Number(setRow.kg) || 0,
-        reps: Number(setRow.reps) || 0,
-        good_point: item.goodPoint,
-        improve_point: item.improvePoint,
-      }))
-    )
-
-    const { error: itemError } = await supabase.from('workout_items').insert(itemRows)
-
-    if (itemError) {
-      alert(`운동 세트 저장 오류: ${itemError.message}`)
-      return
-    }
-
-    alert('운동 기록 저장 완료')
-
-    await syncMemberSessionCount(selectedMemberId)
-    await loadMembers()
-    await loadWorkoutHistory(selectedMemberId)
-    resetWorkoutDraft()
-  }
-
-  const editWorkoutRecord = (workout) => {
-    const grouped = []
-    const map = new Map()
-
-    ;(workout.workout_items || []).forEach((row) => {
-      const key = `${row.exercise_name}-${row.body_part}-${row.category}-${row.brand}-${row.good_point || ''}-${row.improve_point || ''}`
-
-      if (!map.has(key)) {
-        map.set(key, {
-          id: `edit-${Math.random()}`,
-          equipmentType: row.category,
-          bodyPart: row.body_part,
-          brand: row.brand,
-          exerciseName: row.exercise_name,
-          sets: [],
-          goodPoint: row.good_point || '',
-          improvePoint: row.improve_point || '',
-        })
+    setWorkoutForm((prev) => {
+      const nextItems = [...prev.items]
+      nextItems[itemIndex] = {
+        ...nextItems[itemIndex],
+        sets: nextItems[itemIndex].sets.filter((_, idx) => idx !== setIndex),
       }
-
-      map.get(key).sets.push({
-        setNo: row.set_no,
-        kg: row.kg,
-        reps: row.reps,
-      })
+      return { ...prev, items: nextItems }
     })
-
-    map.forEach((value) => {
-      grouped.push({
-        ...value,
-        sets: normalizeSetNumbers([...value.sets].sort((a, b) => Number(a.setNo) - Number(b.setNo))),
-      })
-    })
-
-    setWorkoutDraft({
-      date: workout.workout_date,
-      bodyParts: workout.body_parts || [],
-      items: grouped.length > 0 ? grouped : [createWorkoutItem(getDefaultBrandName(brands))],
-    })
-
-    setEditingWorkoutId(workout.id)
-    setActiveTab('기록작성')
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const deleteWorkoutRecord = async (workoutId) => {
-    if (!window.confirm('이 운동 기록을 삭제할까요?')) return
+  const updateSetValue = (itemIndex, setIndex, field, value) => {
+    setWorkoutForm((prev) => {
+      const nextItems = [...prev.items]
+      const nextSets = [...nextItems[itemIndex].sets]
+      nextSets[setIndex] = { ...nextSets[setIndex], [field]: value }
+      nextItems[itemIndex] = { ...nextItems[itemIndex], sets: nextSets }
+      return { ...prev, items: nextItems }
+    })
+  }
 
-    const { error } = await supabase.from('workouts').delete().eq('id', workoutId)
+  const handleWorkoutSubmit = async (e) => {
+    e.preventDefault()
 
-    if (error) {
-      alert(`운동 기록 삭제 오류: ${error.message}`)
+    if (!workoutForm.member_id) {
+      setMessage('회원을 선택해주세요.')
       return
     }
 
-    await syncMemberSessionCount(selectedMemberId)
-    await loadMembers()
-    await loadWorkoutHistory(selectedMemberId)
-
-    if (editingWorkoutId === workoutId) {
-      resetWorkoutDraft()
-    }
-  }
-
-  const updateWorkoutRecord = async () => {
-    if (!editingWorkoutId) return
-
-    const deleteOld = await supabase.from('workouts').delete().eq('id', editingWorkoutId)
-
-    if (deleteOld.error) {
-      alert(`기존 기록 삭제 오류: ${deleteOld.error.message}`)
-      return
-    }
-
-    setEditingWorkoutId(null)
-    await saveWorkoutRecord()
-  }
-
-  const updateRoutineRow = (dayKey, key, value) => {
-    setRoutineRows((prev) =>
-      prev.map((row) => (row.dayKey === dayKey ? { ...row, [key]: value } : row)),
-    )
-  }
-
-  const saveMemberRoutines = async () => {
-    if (!selectedMemberId) {
-      alert('회원을 먼저 선택해 주세요.')
-      return
-    }
-
-    setSavingRoutines(true)
-
-    const insertRows = routineRows
-      .map((row, index) => ({
-        member_id: selectedMemberId,
-        day_key: row.dayKey,
-        day_label: row.dayLabel,
-        title: row.title.trim(),
-        exercises: row.exercisesText
-          .split(',')
-          .map((v) => v.trim())
-          .filter(Boolean),
-        sort_order: index + 1,
+    const cleanedItems = workoutForm.items
+      .filter((item) => item.exercise_name_snapshot?.trim())
+      .map((item, index) => ({
+        workout_id: workoutForm.id || null,
+        exercise_id: item.exercise_id || null,
+        exercise_name_snapshot: item.exercise_name_snapshot.trim(),
+        sort_order: index,
+        sets: normalizeSets(item.sets),
       }))
-      .filter((row) => row.title || row.exercises.length > 0)
 
-    const { error: deleteError } = await supabase
-      .from('member_routines')
-      .delete()
-      .eq('member_id', selectedMemberId)
-
-    if (deleteError) {
-      setSavingRoutines(false)
-      alert(`기존 루틴 삭제 오류: ${deleteError.message}`)
+    if (cleanedItems.length === 0) {
+      setMessage('최소 1개의 운동을 입력해주세요.')
       return
     }
 
-    if (insertRows.length > 0) {
-      const { error: insertError } = await supabase
-        .from('member_routines')
-        .insert(insertRows)
+    const payload = {
+      member_id: workoutForm.member_id,
+      workout_date: workoutForm.workout_date,
+      workout_type: workoutForm.workout_type,
+      good: workoutForm.good?.trim() || '',
+      improve: workoutForm.improve?.trim() || '',
+      created_by: profile?.id || null,
+    }
 
-      if (insertError) {
-        setSavingRoutines(false)
-        alert(`루틴 저장 오류: ${insertError.message}`)
+    let targetWorkoutId = workoutForm.id
+
+    if (workoutForm.id) {
+      const { error } = await supabase.from('workouts').update(payload).eq('id', workoutForm.id)
+      if (error) {
+        setMessage(error.message)
         return
       }
+      await supabase.from('workout_items').delete().eq('workout_id', workoutForm.id)
+    } else {
+      const { data, error } = await supabase.from('workouts').insert(payload).select().single()
+      if (error || !data) {
+        setMessage(error?.message || '운동 기록 저장에 실패했습니다.')
+        return
+      }
+      targetWorkoutId = data.id
     }
 
-    setSavingRoutines(false)
-    alert('회원 루틴 저장 완료')
-    await loadMemberRoutines(selectedMemberId)
-  }
-
-  const resetMemberRoutines = () => {
-    setRoutineRows(createDefaultRoutineRows())
-  }
-
-  const saveManual = async () => {
-    setSavingManual(true)
-
-    const { error } = await supabase.from('app_manuals').upsert(
-      [
-        {
-          manual_key: 'common',
-          title: manualTitle.trim() || '더피트니스 화정점 사용방법',
-          content: manualContent,
-          updated_at: new Date().toISOString(),
-        },
-      ],
-      { onConflict: 'manual_key' },
+    await supabase.from('workout_items').insert(
+      cleanedItems.map((item) => ({
+        ...item,
+        workout_id: targetWorkoutId,
+      })),
     )
 
-    if (error) {
-      setSavingManual(false)
-      alert(`메뉴얼 저장 오류: ${error.message}`)
+    await loadWorkouts()
+
+    if (workoutForm.workout_type === 'pt') {
+      const { data: freshWorkouts } = await supabase
+        .from('workouts')
+        .select('*')
+        .eq('member_id', workoutForm.member_id)
+
+      const freshPtCount = (freshWorkouts || []).filter((workout) => workout.workout_type === 'pt').length
+
+      await supabase
+        .from('members')
+        .update({ used_sessions: freshPtCount })
+        .eq('id', workoutForm.member_id)
+
+      await loadMembers()
+    }
+
+    setMessage(workoutForm.id ? '운동 기록이 수정되었습니다.' : '운동 기록이 저장되었습니다.')
+    resetWorkoutForm()
+  }
+
+  const handleWorkoutEdit = (workout) => {
+    const items = workoutItemsMap[workout.id] || []
+    setWorkoutForm({
+      id: workout.id,
+      member_id: workout.member_id,
+      workout_date: workout.workout_date,
+      workout_type: workout.workout_type,
+      good: workout.good || '',
+      improve: workout.improve || '',
+      items:
+        items.length > 0
+          ? items.map((item) => ({
+              exercise_id: item.exercise_id || '',
+              exercise_name_snapshot: item.exercise_name_snapshot || '',
+              sets: Array.isArray(item.sets) && item.sets.length > 0 ? item.sets : [{ kg: '', reps: '' }],
+            }))
+          : [{ ...emptyWorkoutItem }],
+    })
+    setActiveTab('기록작성')
+  }
+
+  const handleWorkoutDelete = async (workout) => {
+    if (!window.confirm('이 운동 기록을 삭제할까요?')) return
+
+    await supabase.from('workouts').delete().eq('id', workout.id)
+    await loadWorkouts()
+
+    if (workout.workout_type === 'pt') {
+      const { data: freshWorkouts } = await supabase
+        .from('workouts')
+        .select('*')
+        .eq('member_id', workout.member_id)
+
+      const freshPtCount = (freshWorkouts || []).filter((item) => item.workout_type === 'pt').length
+
+      await supabase.from('members').update({ used_sessions: freshPtCount }).eq('id', workout.member_id)
+      await loadMembers()
+    }
+
+    setMessage('운동 기록이 삭제되었습니다.')
+  }
+
+  const handleBrandSubmit = async (e) => {
+    e.preventDefault()
+    if (!brandForm.name.trim()) return
+
+    if (editingBrandId) {
+      await supabase.from('brands').update({ name: brandForm.name.trim() }).eq('id', editingBrandId)
+      setMessage('브랜드가 수정되었습니다.')
+    } else {
+      await supabase.from('brands').insert({ name: brandForm.name.trim() })
+      setMessage('브랜드가 추가되었습니다.')
+    }
+
+    setBrandForm(emptyBrandForm)
+    setEditingBrandId(null)
+    await loadBrands()
+  }
+
+  const handleBrandDelete = async (brandId) => {
+    if (!window.confirm('브랜드를 삭제할까요?')) return
+    await supabase.from('brands').delete().eq('id', brandId)
+    await loadBrands()
+    await loadExercises()
+    setMessage('브랜드가 삭제되었습니다.')
+  }
+
+  const handleExerciseSubmit = async (e) => {
+    e.preventDefault()
+
+    const payload = {
+      name: exerciseForm.name?.trim() || '',
+      body_part: exerciseForm.body_part?.trim() || '',
+      category: exerciseForm.category?.trim() || '',
+      brand_id: exerciseForm.brand_id || null,
+    }
+
+    if (!payload.name) {
+      setMessage('운동명을 입력해주세요.')
       return
     }
 
-    setSavingManual(false)
-    alert('메뉴얼 저장 완료')
-    await loadManual()
+    if (editingExerciseId) {
+      await supabase.from('exercises').update(payload).eq('id', editingExerciseId)
+      setMessage('운동이 수정되었습니다.')
+    } else {
+      await supabase.from('exercises').insert(payload)
+      setMessage('운동이 추가되었습니다.')
+    }
+
+    setExerciseForm(emptyExerciseForm)
+    setEditingExerciseId(null)
+    await loadExercises()
   }
 
-  const saveDietFeedback = async (dietLogId) => {
-    setSavingDietFeedbackId(dietLogId)
+  const handleExerciseDelete = async (exerciseId) => {
+    if (!window.confirm('운동을 삭제할까요?')) return
+    await supabase.from('exercises').delete().eq('id', exerciseId)
+    await loadExercises()
+    setMessage('운동이 삭제되었습니다.')
+  }
 
-    const { error } = await supabase
-      .from('diet_logs')
-      .update({
-        feedback: dietFeedbackDrafts[dietLogId] || '',
-        feedback_updated_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+  const handleBulkExerciseInsert = async () => {
+    const lines = bulkExerciseText.split('\n').map((line) => line.trim()).filter(Boolean)
+    if (lines.length === 0) {
+      setMessage('일괄 입력할 내용을 넣어주세요.')
+      return
+    }
+
+    const brandMap = new Map(brands.map((brand) => [brand.name, brand.id]))
+    const rowsToInsert = []
+
+    for (const line of lines) {
+      const [brandNameRaw, nameRaw, bodyPartRaw, categoryRaw] = line.split('|')
+      const brandName = (brandNameRaw || '').trim()
+      const name = (nameRaw || '').trim()
+      const body_part = (bodyPartRaw || '').trim()
+      const category = (categoryRaw || '').trim()
+      if (!name) continue
+
+      let brandId = null
+
+      if (brandName) {
+        if (!brandMap.has(brandName)) {
+          const { data: newBrand, error } = await supabase
+            .from('brands')
+            .insert({ name: brandName })
+            .select()
+            .single()
+
+          if (!error && newBrand) {
+            brandMap.set(brandName, newBrand.id)
+          }
+        }
+        brandId = brandMap.get(brandName) || null
+      }
+
+      rowsToInsert.push({
+        name,
+        body_part,
+        category,
+        brand_id: brandId,
       })
-      .eq('id', dietLogId)
+    }
 
-    if (error) {
-      alert(`식단 피드백 저장 오류: ${error.message}`)
-      setSavingDietFeedbackId('')
+    if (rowsToInsert.length === 0) {
+      setMessage('입력 가능한 운동 데이터가 없습니다.')
       return
     }
 
-    await loadDietLogs(selectedMemberId, dietDateFilter)
-    setSavingDietFeedbackId('')
-    alert('식단 피드백 저장 완료')
+    const { error } = await supabase.from('exercises').insert(rowsToInsert)
+    if (error) {
+      setMessage(error.message)
+      return
+    }
+
+    await loadBrands()
+    await loadExercises()
+    setMessage(`${rowsToInsert.length}개의 운동이 일괄 등록되었습니다.`)
   }
 
-  const deleteDietLog = async (dietLogId) => {
-    if (!window.confirm('이 식단 기록을 삭제할까요?')) return
+  const handleDietFeedbackSave = async (dietId, payload) => {
+    await supabase.from('diet_logs').update(payload).eq('id', dietId)
+    await loadDietLogs()
+    setMessage('식단 피드백이 저장되었습니다.')
+  }
 
-    const { error } = await supabase.from('diet_logs').delete().eq('id', dietLogId)
+  const handleDietDelete = async (dietId) => {
+    if (!window.confirm('식단 기록을 삭제할까요?')) return
+    await supabase.from('diet_logs').delete().eq('id', dietId)
+    await loadDietLogs()
+    setMessage('식단 기록이 삭제되었습니다.')
+  }
 
-    if (error) {
-      alert(`식단 삭제 오류: ${error.message}`)
+  const handleManualSave = async () => {
+    const payload = {
+      target_role: manualTarget,
+      title: manualForm.title?.trim() || '',
+      content: manualForm.content?.trim() || '',
+    }
+
+    const existing = manuals.find((manual) => manual.target_role === manualTarget)
+
+    if (existing?.id) {
+      await supabase.from('app_manuals').update(payload).eq('id', existing.id)
+    } else {
+      await supabase.from('app_manuals').insert(payload)
+    }
+
+    await loadManuals()
+    setMessage('사용방법이 저장되었습니다.')
+  }
+
+  const handleManualDelete = async () => {
+    const existing = manuals.find((manual) => manual.target_role === manualTarget)
+    if (!existing?.id) return
+    if (!window.confirm('이 사용방법을 삭제할까요?')) return
+
+    await supabase.from('app_manuals').delete().eq('id', existing.id)
+    await loadManuals()
+    setManualForm({ title: '', content: '' })
+    setMessage('사용방법이 삭제되었습니다.')
+  }
+
+  const resetScheduleForm = () => {
+    setScheduleForm({
+      schedule_date: new Date().toISOString().slice(0, 10),
+      is_working: true,
+      is_weekend_work: false,
+      work_start: '09:00',
+      work_end: '18:00',
+      memo: '',
+      selectedSlots: ['10:00', '11:00', '14:00', '15:00'],
+    })
+  }
+
+  const toggleScheduleSlot = (time) => {
+    setScheduleForm((prev) => {
+      const exists = prev.selectedSlots.includes(time)
+      return {
+        ...prev,
+        selectedSlots: exists
+          ? prev.selectedSlots.filter((slot) => slot !== time)
+          : [...prev.selectedSlots, time].sort(),
+      }
+    })
+  }
+
+  const handleScheduleSave = async () => {
+    if (!selectedCoachId) {
+      setMessage('코치를 먼저 선택해주세요.')
       return
     }
 
-    alert('식단 기록 삭제 완료')
-    await loadDietLogs(selectedMemberId, dietDateFilter)
+    if (!scheduleForm.schedule_date) {
+      setMessage('날짜를 선택해주세요.')
+      return
+    }
+
+    const payload = {
+      coach_id: selectedCoachId,
+      schedule_date: scheduleForm.schedule_date,
+      is_working: scheduleForm.is_working,
+      is_weekend_work: scheduleForm.is_weekend_work,
+      work_start: scheduleForm.is_working ? scheduleForm.work_start || null : null,
+      work_end: scheduleForm.is_working ? scheduleForm.work_end || null : null,
+      memo: scheduleForm.memo?.trim() || '',
+    }
+
+    const { data: existing } = await supabase
+      .from('coach_schedules')
+      .select('id')
+      .eq('coach_id', selectedCoachId)
+      .eq('schedule_date', scheduleForm.schedule_date)
+      .maybeSingle()
+
+    let scheduleId = existing?.id || null
+
+    if (scheduleId) {
+      await supabase.from('coach_schedules').update(payload).eq('id', scheduleId)
+      await supabase.from('coach_schedule_slots').delete().eq('schedule_id', scheduleId)
+    } else {
+      const { data } = await supabase.from('coach_schedules').insert(payload).select().single()
+      scheduleId = data.id
+    }
+
+    if (scheduleForm.is_working && scheduleForm.selectedSlots.length > 0) {
+      await supabase.from('coach_schedule_slots').insert(
+        scheduleForm.selectedSlots.map((slot) => ({
+          schedule_id: scheduleId,
+          slot_time: slot,
+          is_available: true,
+          note: '',
+        })),
+      )
+    }
+
+    await loadCoachSchedules()
+    setMessage('코치 스케줄이 저장되었습니다.')
+    resetScheduleForm()
+  }
+
+  const handleScheduleEdit = (schedule) => {
+    const slots = coachScheduleSlotsMap[schedule.id] || []
+    setSelectedCoachId(schedule.coach_id)
+    setScheduleForm({
+      schedule_date: schedule.schedule_date,
+      is_working: schedule.is_working,
+      is_weekend_work: schedule.is_weekend_work,
+      work_start: schedule.work_start || '09:00',
+      work_end: schedule.work_end || '18:00',
+      memo: schedule.memo || '',
+      selectedSlots: slots.filter((slot) => slot.is_available).map((slot) => slot.slot_time),
+    })
+    setActiveTab('코치스케줄')
+  }
+
+  const handleScheduleDelete = async (scheduleId) => {
+    if (!window.confirm('이 스케줄을 삭제할까요?')) return
+    await supabase.from('coach_schedules').delete().eq('id', scheduleId)
+    await loadCoachSchedules()
+    setMessage('코치 스케줄이 삭제되었습니다.')
+  }
+
+  const resetProgramForm = () => {
+    setProgramForm(emptyProgramForm)
+    setEditingProgramId(null)
+  }
+
+  const handleProgramSubmit = async (e) => {
+    e.preventDefault()
+
+    const payload = {
+      name: programForm.name?.trim() || '',
+      price: Number(programForm.price) || 0,
+      session_count: Number(programForm.session_count) || 0,
+      description: programForm.description?.trim() || '',
+      is_vip: !!programForm.is_vip,
+      is_active: !!programForm.is_active,
+    }
+
+    if (!payload.name) {
+      setMessage('프로그램명을 입력해주세요.')
+      return
+    }
+
+    if (editingProgramId) {
+      await supabase.from('programs').update(payload).eq('id', editingProgramId)
+      setMessage('프로그램이 수정되었습니다.')
+    } else {
+      await supabase.from('programs').insert(payload)
+      setMessage('프로그램이 추가되었습니다.')
+    }
+
+    resetProgramForm()
+    await loadPrograms()
+    await loadMembers()
+  }
+
+  const handleProgramEdit = (program) => {
+    setEditingProgramId(program.id)
+    setProgramForm({
+      id: program.id,
+      name: program.name || '',
+      price: program.price || '',
+      session_count: program.session_count || '',
+      description: program.description || '',
+      is_vip: !!program.is_vip,
+      is_active: !!program.is_active,
+    })
+  }
+
+  const handleProgramDelete = async (programId) => {
+    if (!window.confirm('프로그램을 삭제할까요?')) return
+    await supabase.from('programs').delete().eq('id', programId)
+    await loadPrograms()
+    setMessage('프로그램이 삭제되었습니다.')
+  }
+
+  const resetSaleForm = () => {
+    setSaleForm(emptySaleForm)
+    setEditingSaleId(null)
+  }
+
+  const handleSaleSubmit = async (e) => {
+    e.preventDefault()
+
+    const payload = {
+      member_id: saleForm.member_id || null,
+      program_id: saleForm.program_id || null,
+      sale_date: saleForm.sale_date,
+      amount: Number(saleForm.amount) || 0,
+      payment_method: saleForm.payment_method,
+      installment_months: Number(saleForm.installment_months) || 0,
+      cash_receipt_issued: !!saleForm.cash_receipt_issued,
+      purchased_session_count: Number(saleForm.purchased_session_count) || 0,
+      service_session_count: Number(saleForm.service_session_count) || 0,
+      is_vip: !!saleForm.is_vip,
+      memo: saleForm.memo?.trim() || '',
+    }
+
+    if (editingSaleId) {
+      await supabase.from('sales_records').update(payload).eq('id', editingSaleId)
+      setMessage('매출 기록이 수정되었습니다.')
+    } else {
+      await supabase.from('sales_records').insert(payload)
+      setMessage('매출 기록이 저장되었습니다.')
+    }
+
+    resetSaleForm()
+    await loadSalesRecords()
+    await loadSalesSummary(saleMonth)
+  }
+
+  const handleSaleEdit = (sale) => {
+    setEditingSaleId(sale.id)
+    setSaleForm({
+      id: sale.id,
+      member_id: sale.member_id || '',
+      program_id: sale.program_id || '',
+      sale_date: sale.sale_date,
+      amount: sale.amount || '',
+      payment_method: sale.payment_method || '카드',
+      installment_months: sale.installment_months || 0,
+      cash_receipt_issued: !!sale.cash_receipt_issued,
+      purchased_session_count: sale.purchased_session_count || 0,
+      service_session_count: sale.service_session_count || 0,
+      is_vip: !!sale.is_vip,
+      memo: sale.memo || '',
+    })
+  }
+
+  const handleSaleDelete = async (saleId) => {
+    if (!window.confirm('매출 기록을 삭제할까요?')) return
+    await supabase.from('sales_records').delete().eq('id', saleId)
+    await loadSalesRecords()
+    await loadSalesSummary(saleMonth)
+    setMessage('매출 기록이 삭제되었습니다.')
+  }
+
+  const getSalesAutoFeedback = () => {
+    if (!salesSummary) return '매출 데이터가 없습니다.'
+    const total = Number(salesSummary.total_sales || 0)
+    const count = Number(salesSummary.total_count || 0)
+    const vip = Number(salesSummary.vip_sales_count || 0)
+
+    if (count === 0) return '이번 달 등록된 매출 기록이 없습니다.'
+    if (total >= 3000000) return '좋습니다. 이번 달 매출 흐름이 안정적입니다.'
+    if (vip >= 3) return 'VIP 전환이 잘 이루어지고 있습니다.'
+    if (total < 1000000) return '이번 달은 신규 등록/재등록 전환 전략 점검이 필요합니다.'
+    return '현재 매출 흐름은 보통 수준입니다. 결제수단과 프로그램 전환율을 함께 보세요.'
+  }
+
+  const resetNoticeForm = () => {
+    setNoticeForm(emptyNoticeForm)
+    setEditingNoticeId(null)
+  }
+
+  const handleNoticeSubmit = async (e) => {
+    e.preventDefault()
+
+    const payload = {
+      title: noticeForm.title?.trim() || '',
+      content: noticeForm.content?.trim() || '',
+      category: noticeForm.category,
+      image_url: noticeForm.image_url?.trim() || '',
+      video_url: noticeForm.video_url?.trim() || '',
+      is_published: !!noticeForm.is_published,
+      starts_at: noticeForm.starts_at || null,
+      ends_at: noticeForm.ends_at || null,
+      created_by: profile?.id || null,
+    }
+
+    if (!payload.title) {
+      setMessage('공지 제목을 입력해주세요.')
+      return
+    }
+
+    if (editingNoticeId) {
+      await supabase.from('notices').update(payload).eq('id', editingNoticeId)
+      setMessage('공지사항이 수정되었습니다.')
+    } else {
+      await supabase.from('notices').insert(payload)
+      setMessage('공지사항이 등록되었습니다.')
+    }
+
+    resetNoticeForm()
+    await loadNotices()
+  }
+
+  const handleNoticeEdit = (notice) => {
+    setEditingNoticeId(notice.id)
+    setNoticeForm({
+      id: notice.id,
+      title: notice.title || '',
+      content: notice.content || '',
+      category: notice.category || '공지',
+      image_url: notice.image_url || '',
+      video_url: notice.video_url || '',
+      is_published: !!notice.is_published,
+      starts_at: notice.starts_at || '',
+      ends_at: notice.ends_at || '',
+    })
+  }
+
+  const handleNoticeDelete = async (noticeId) => {
+    if (!window.confirm('공지사항을 삭제할까요?')) return
+    await supabase.from('notices').delete().eq('id', noticeId)
+    await loadNotices()
+    setMessage('공지사항이 삭제되었습니다.')
+  }
+
+  const displayedDietLogs = dietMemberFilter
+    ? dietLogs.filter((diet) => diet.member_id === dietMemberFilter)
+    : dietLogs
+
+  if (loading) {
+    return <div className="loading-card">데이터 불러오는 중...</div>
   }
 
   return (
     <div className="dashboard-shell">
-      <div className="dashboard-topbar">
-        <div>
-          <h2 style={{ margin: 0 }}>관리자 대시보드</h2>
-          <div className="muted">
-            로그인: {user.email} · {profile.teacher_name || profile.name}
+      <header className="topbar">
+        <div className="topbar-brand">
+          <img src={logo} alt="더피트니스 화정점 로고" className="topbar-logo small" />
+          <div>
+            <div className="brand-mark">더피트니스 화정점</div>
+            <h1 className="page-title">관리자 시스템</h1>
+            <p className="sub-text">{profile?.name || '관리자'}님 접속 중</p>
           </div>
         </div>
         <button className="secondary-btn" onClick={onLogout}>
           로그아웃
         </button>
-      </div>
+      </header>
 
-      <div className="tab-bar">
-        {adminTabs.map((tab) => (
+      <nav className="tab-row">
+        {TABS.map((tab) => (
           <button
             key={tab}
             className={`tab-btn ${activeTab === tab ? 'active' : ''}`}
@@ -1354,1085 +1383,1432 @@ export default function AdminDashboard({ user, profile, onLogout }) {
             {tab}
           </button>
         ))}
-      </div>
+      </nav>
+
+      {message ? <div className="message success">{message}</div> : null}
 
       {activeTab === '회원' && (
-        <div className="tab-page">
-          <div className="admin-grid">
-            <section className="card section-card">
-              <div className="section-head">
-                <div>
-                  <div className="section-label">{editMemberId ? '회원 수정' : '회원 추가'}</div>
-                  <h2>{editMemberId ? '회원 정보 수정' : '새 회원 등록'}</h2>
-                </div>
-                {editMemberId && (
-                  <button className="secondary-btn" onClick={closeMemberEdit}>
-                    수정 취소
-                  </button>
-                )}
-              </div>
+        <div className="two-col">
+          <section className="card">
+            <h2>회원 등록 / 수정</h2>
+            <form className="stack-gap" onSubmit={handleMemberSubmit}>
+              <label className="field">
+                <span>이름</span>
+                <input value={memberForm.name} onChange={(e) => setMemberForm({ ...memberForm, name: e.target.value })} />
+              </label>
 
-              {!editMemberId ? (
-                <div className="form-block">
-                  <input
-                    placeholder="회원 이름"
-                    value={memberForm.name}
-                    onChange={(e) => setMemberForm({ ...memberForm, name: e.target.value })}
-                  />
-                  <input
-                    placeholder="목표"
-                    value={memberForm.goal}
-                    onChange={(e) => setMemberForm({ ...memberForm, goal: e.target.value })}
-                  />
-                  <div className="grid-2">
-                    <input
-                      type="number"
-                      placeholder="총 세션"
-                      value={memberForm.total_sessions}
-                      onChange={(e) => setMemberForm({ ...memberForm, total_sessions: e.target.value })}
-                    />
-                    <input type="number" placeholder="사용 세션" value={memberForm.used_sessions} disabled />
-                  </div>
-                  <div className="grid-2">
-                    <input
-                      type="date"
-                      value={memberForm.start_date}
-                      onChange={(e) => setMemberForm({ ...memberForm, start_date: e.target.value })}
-                    />
-                    <input
-                      type="date"
-                      value={memberForm.end_date}
-                      onChange={(e) => setMemberForm({ ...memberForm, end_date: e.target.value })}
-                    />
-                  </div>
-                  <textarea
-                    placeholder="메모"
-                    value={memberForm.memo}
-                    onChange={(e) => setMemberForm({ ...memberForm, memo: e.target.value })}
-                  />
-                  <button className="primary-btn" onClick={addMember}>
-                    회원 추가
-                  </button>
-                </div>
-              ) : (
-                <div className="form-block">
-                  <input
-                    placeholder="회원 이름"
-                    value={editMemberForm.name}
-                    onChange={(e) => setEditMemberForm({ ...editMemberForm, name: e.target.value })}
-                  />
-                  <input
-                    placeholder="목표"
-                    value={editMemberForm.goal}
-                    onChange={(e) => setEditMemberForm({ ...editMemberForm, goal: e.target.value })}
-                  />
-                  <div className="grid-2">
-                    <input
-                      type="number"
-                      placeholder="총 세션"
-                      value={editMemberForm.total_sessions}
-                      onChange={(e) => setEditMemberForm({ ...editMemberForm, total_sessions: e.target.value })}
-                    />
-                    <input
-                      type="text"
-                      value={
-                        selectedMember && selectedMember.id === editMemberId
-                          ? `${selectedMember.used_sessions}회 (자동 계산)`
-                          : '자동 계산'
-                      }
-                      disabled
-                    />
-                  </div>
-                  <div className="grid-2">
-                    <input
-                      type="date"
-                      value={editMemberForm.start_date}
-                      onChange={(e) => setEditMemberForm({ ...editMemberForm, start_date: e.target.value })}
-                    />
-                    <input
-                      type="date"
-                      value={editMemberForm.end_date}
-                      onChange={(e) => setEditMemberForm({ ...editMemberForm, end_date: e.target.value })}
-                    />
-                  </div>
-                  <textarea
-                    placeholder="메모"
-                    value={editMemberForm.memo}
-                    onChange={(e) => setEditMemberForm({ ...editMemberForm, memo: e.target.value })}
-                  />
-                  <button className="primary-btn" onClick={updateMember}>
-                    회원 정보 저장
-                  </button>
-                </div>
-              )}
-            </section>
+              <label className="field">
+                <span>목표</span>
+                <input value={memberForm.goal} onChange={(e) => setMemberForm({ ...memberForm, goal: e.target.value })} />
+              </label>
 
-            <section className="card section-card">
-              <div className="section-head">
-                <div>
-                  <div className="section-label">회원 목록</div>
-                  <h2>등록된 회원</h2>
-                </div>
-              </div>
-
-              <div className="member-list modern-list">
-                {loadingMembers ? (
-                  <div className="muted">불러오는 중...</div>
-                ) : members.length === 0 ? (
-                  <div className="muted">등록된 회원이 없습니다.</div>
-                ) : (
-                  members.map((memberRow) => (
-                    <div
-                      key={memberRow.id}
-                      className={`member-card ${selectedMemberId === memberRow.id ? 'active' : ''}`}
-                      onClick={() => setSelectedMemberId(memberRow.id)}
-                    >
-                      <div className="member-card-top">
-                        <div>
-                          <div className="member-card-name">{memberRow.name}</div>
-                          <div className="member-card-goal">{memberRow.goal || '목표 미입력'}</div>
-                        </div>
-                        <div className="member-card-session">
-                          {memberRow.used_sessions} / {memberRow.total_sessions}
-                        </div>
-                      </div>
-
-                      <div className="member-card-sub">
-                        남은 세션 {Math.max(memberRow.total_sessions - memberRow.used_sessions, 0)}회
-                      </div>
-
-                      <div className="button-row" style={{ marginTop: 12 }}>
-                        <button
-                          className="secondary-btn"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            openMemberEdit(memberRow)
-                          }}
-                        >
-                          회원 수정
-                        </button>
-                        <button
-                          className="danger-btn"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            deleteMember(memberRow.id)
-                          }}
-                        >
-                          회원 삭제
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </section>
-          </div>
-
-          {selectedMember && (
-            <>
-              <section className="card section-card">
-                <div className="section-head">
-                  <div>
-                    <div className="section-label">선택 회원 정보</div>
-                    <h2>{selectedMember.name}</h2>
-                  </div>
-                  <div className="pill">
-                    남은 세션 {Math.max(selectedMember.total_sessions - selectedMember.used_sessions, 0)}회
-                  </div>
-                </div>
-
-                <div className="summary-grid">
-                  <div className="summary-box">
-                    <div className="summary-label">목표</div>
-                    <div className="summary-value">{selectedMember.goal || '미입력'}</div>
-                  </div>
-                  <div className="summary-box">
-                    <div className="summary-label">세션</div>
-                    <div className="summary-value">
-                      {selectedMember.used_sessions} / {selectedMember.total_sessions}회
-                    </div>
-                  </div>
-                  <div className="summary-box">
-                    <div className="summary-label">시작일</div>
-                    <div className="summary-value">{selectedMember.start_date || '-'}</div>
-                  </div>
-                  <div className="summary-box">
-                    <div className="summary-label">종료일</div>
-                    <div className="summary-value">{selectedMember.end_date || '-'}</div>
-                  </div>
-                </div>
-
-                <div className="progress-wrap">
-                  <div className="progress-bar">
-                    <div className="progress-fill" style={{ width: `${progress}%` }} />
-                  </div>
-                </div>
-
-                <div className="memo-box">
-                  <div className="memo-title">특이사항 / 메모</div>
-                  <div>{selectedMember.memo || '메모 없음'}</div>
-                </div>
-
-                <div className="member-link-box">
-                  <div className="memo-title">회원 링크 / 코드</div>
-                  <div className="link-line">링크: {`${window.location.origin}?member=${selectedMember.id}`}</div>
-                  <div className="link-line">
-                    코드: <strong>{selectedMember.access_code || '-'}</strong>
-                  </div>
-                  <div className="button-row">
-                    <button
-                      className="secondary-btn"
-                      onClick={() => copyText(`${window.location.origin}?member=${selectedMember.id}`)}
-                    >
-                      링크 복사
-                    </button>
-                    <button className="secondary-btn" onClick={() => copyText(selectedMember.access_code || '')}>
-                      코드 복사
-                    </button>
-                  </div>
-                </div>
-              </section>
-
-              <section className="card section-card">
-                <div className="section-head">
-                  <div>
-                    <div className="section-label">회원 루틴 관리</div>
-                    <h2>{selectedMember.name}님 루틴</h2>
-                  </div>
-                </div>
-
-                {loadingRoutines ? (
-                  <div className="muted">루틴 불러오는 중...</div>
-                ) : (
-                  <div className="routine-admin-list">
-                    {routineRows.map((row) => (
-                      <div className="routine-admin-card" key={row.dayKey}>
-                        <div className="memo-title">{row.dayLabel}</div>
-                        <input
-                          placeholder="루틴 제목 예: 상체 루틴"
-                          value={row.title}
-                          onChange={(e) => updateRoutineRow(row.dayKey, 'title', e.target.value)}
-                        />
-                        <textarea
-                          placeholder="운동 목록을 쉼표(,)로 구분해서 입력&#10;예: 벤치프레스, 랫풀다운, 숄더프레스"
-                          value={row.exercisesText}
-                          onChange={(e) => updateRoutineRow(row.dayKey, 'exercisesText', e.target.value)}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="button-row" style={{ marginTop: 16 }}>
-                  <button className="primary-btn" onClick={saveMemberRoutines} disabled={savingRoutines}>
-                    {savingRoutines ? '루틴 저장 중...' : '회원 루틴 저장'}
-                  </button>
-                  <button className="secondary-btn" onClick={resetMemberRoutines}>
-                    입력 초기화
-                  </button>
-                </div>
-              </section>
-            </>
-          )}
-        </div>
-      )}
-
-      {activeTab === '기록작성' && (
-        <div className="tab-page">
-          {selectedMember && (
-            <section className="card section-card">
-              <div className="section-head">
-                <div>
-                  <div className="section-label">대상 회원</div>
-                  <h2>{selectedMember.name}</h2>
-                </div>
-                <div className="pill">
-                  남은 세션 {Math.max(selectedMember.total_sessions - selectedMember.used_sessions, 0)}회
-                </div>
-              </div>
-
-              <div className="summary-grid">
-                <div className="summary-box">
-                  <div className="summary-label">목표</div>
-                  <div className="summary-value">{selectedMember.goal || '미입력'}</div>
-                </div>
-                <div className="summary-box">
-                  <div className="summary-label">진행 세션</div>
-                  <div className="summary-value">
-                    {selectedMember.used_sessions} / {selectedMember.total_sessions}
-                  </div>
-                </div>
-                <div className="summary-box">
-                  <div className="summary-label">이번달 PT</div>
-                  <div className="summary-value">{currentMonthPtCount}회</div>
-                </div>
-                <div className="summary-box">
-                  <div className="summary-label">이번달 개인운동</div>
-                  <div className="summary-value">{currentMonthSelfCount}회</div>
-                </div>
-              </div>
-            </section>
-          )}
-
-          <div className="admin-grid">
-            <section className="card section-card">
-              <div className="section-head">
-                <div>
-                  <div className="section-label">{editingWorkoutId ? '기록 수정' : '운동 기록 작성'}</div>
-                  <h2>{editingWorkoutId ? '운동 기록 수정하기' : '운동 기록 입력'}</h2>
-                </div>
-              </div>
-
-              {!selectedMember ? (
-                <div className="muted">회원 탭에서 회원을 먼저 선택해 주세요.</div>
-              ) : (
-                <>
-                  <div className="grid-2">
-                    <div>
-                      <label>날짜</label>
-                      <input
-                        type="date"
-                        value={workoutDraft.date}
-                        onChange={(e) => setWorkoutDraft({ ...workoutDraft, date: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label>운동 부위</label>
-                      <div className="bodypart-wrap">
-                        {bodyPartOptions.map((part) => (
-                          <button
-                            type="button"
-                            key={part}
-                            className={`part-btn ${workoutDraft.bodyParts.includes(part) ? 'on' : ''}`}
-                            onClick={() => toggleBodyPart(part)}
-                          >
-                            {part}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="section-head" style={{ marginTop: 18 }}>
-                    <h3 style={{ margin: 0 }}>운동 목록</h3>
-                    <button className="secondary-btn" onClick={addWorkoutItem}>
-                      + 운동 추가
-                    </button>
-                  </div>
-
-                  {workoutDraft.items.map((item, itemIndex) => (
-                    <div className="workout-card modern-card" key={item.id}>
-                      <div className="workout-card-head">
-                        <strong>운동 {itemIndex + 1}</strong>
-                        {workoutDraft.items.length > 1 && (
-                          <button className="danger-btn" onClick={() => removeWorkoutItem(itemIndex)}>
-                            삭제
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="grid-3">
-                        <select
-                          value={item.equipmentType}
-                          onChange={(e) => updateWorkoutItem(itemIndex, { equipmentType: e.target.value })}
-                        >
-                          {equipmentTypeOptions.map((o) => (
-                            <option key={o}>{o}</option>
-                          ))}
-                        </select>
-
-                        <select
-                          value={item.bodyPart}
-                          onChange={(e) => updateWorkoutItem(itemIndex, { bodyPart: e.target.value })}
-                        >
-                          {bodyPartOptions.map((o) => (
-                            <option key={o}>{o}</option>
-                          ))}
-                        </select>
-
-                        <select
-                          value={item.brand}
-                          onChange={(e) => updateWorkoutItem(itemIndex, { brand: e.target.value })}
-                        >
-                          {brandNames.map((o) => (
-                            <option key={o}>{o}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <input
-                        placeholder="운동명 입력"
-                        value={item.exerciseName}
-                        onChange={(e) => updateWorkoutItem(itemIndex, { exerciseName: e.target.value })}
-                      />
-
-                      <div className="mini-ex-list">
-                        {filteredExercises
-                          .filter((exercise) => {
-                            const typeMatch = !item.equipmentType || exercise.category === item.equipmentType
-
-                            if (item.equipmentType === '유산소기구') {
-                              return typeMatch
-                            }
-
-                            if (item.equipmentType === '소도구' || item.equipmentType === '스트레칭&재활') {
-                              if (!item.bodyPart) return typeMatch
-                              return typeMatch && exercise.body_part === item.bodyPart
-                            }
-
-                            const bodyPartMatch = !item.bodyPart || exercise.body_part === item.bodyPart
-                            return typeMatch && bodyPartMatch
-                          })
-                          .slice(0, 12)
-                          .map((exercise) => (
-                            <button
-                              type="button"
-                              key={exercise.id}
-                              className="mini-ex-item"
-                              onClick={() => applyExercise(itemIndex, exercise)}
-                            >
-                              {exercise.name} · {exercise.brand_name}
-                            </button>
-                          ))}
-                      </div>
-
-                      <div className="set-card-wrap">
-                        {item.sets.map((setRow, setIndex) => (
-                          <div className="set-card" key={`${item.id}-set-${setIndex}`}>
-                            <div className="set-card-head">
-                              <strong>{setIndex + 1}세트</strong>
-                              {item.sets.length > 1 && (
-                                <button
-                                  type="button"
-                                  className="danger-btn"
-                                  onClick={() => removeSet(itemIndex, setIndex)}
-                                >
-                                  세트 삭제
-                                </button>
-                              )}
-                            </div>
-
-                            <div className="grid-2">
-                              <div>
-                                <label>무게(kg)</label>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={setRow.kg}
-                                  onChange={(e) => updateSet(itemIndex, setIndex, 'kg', e.target.value)}
-                                />
-                              </div>
-                              <div>
-                                <label>횟수(reps)</label>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={setRow.reps}
-                                  onChange={(e) => updateSet(itemIndex, setIndex, 'reps', e.target.value)}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="button-row" style={{ marginTop: 12 }}>
-                        <button type="button" className="secondary-btn" onClick={() => addSet(itemIndex)}>
-                          + 세트 추가
-                        </button>
-                      </div>
-
-                      <div className="grid-2">
-                        <textarea
-                          placeholder="잘한 점"
-                          value={item.goodPoint}
-                          onChange={(e) => updateWorkoutItem(itemIndex, { goodPoint: e.target.value })}
-                        />
-                        <textarea
-                          placeholder="보완할 점"
-                          value={item.improvePoint}
-                          onChange={(e) => updateWorkoutItem(itemIndex, { improvePoint: e.target.value })}
-                        />
-                      </div>
-                    </div>
-                  ))}
-
-                  <div className="save-row">
-                    {editingWorkoutId ? (
-                      <>
-                        <button className="primary-btn" onClick={updateWorkoutRecord}>
-                          기록 수정 저장
-                        </button>
-                        <button className="secondary-btn" onClick={() => resetWorkoutDraft()}>
-                          수정 취소
-                        </button>
-                      </>
-                    ) : (
-                      <button className="primary-btn" onClick={saveWorkoutRecord}>
-                        기록 저장
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
-            </section>
-
-            <section className="card section-card">
-              <div className="section-head">
-                <div>
-                  <div className="section-label">저장된 운동 기록</div>
-                  <h2>간추려보기 / 상세히 보기</h2>
-                </div>
-              </div>
-
-              {!selectedMember ? (
-                <div className="muted">회원 탭에서 회원을 먼저 선택해 주세요.</div>
-              ) : workoutHistory.length === 0 ? (
-                <div className="muted">저장된 기록이 없습니다.</div>
-              ) : (
-                <div className="record-list">
-                  {workoutHistory.map((workout) => {
-                    const groupedItems = groupWorkoutItems(workout.workout_items || [])
-                    const isExpanded = expandedWorkoutIds.includes(workout.id)
-                    const exerciseCount = groupedItems.length
-                    const totalSets = groupedItems.reduce((sum, item) => sum + item.sets.length, 0)
-
-                    return (
-                      <div className="record-card" key={workout.id}>
-                        <div className="record-card-top">
-                          <div>
-                            <div className="record-date">{workout.workout_date}</div>
-                            <div className="record-meta">
-                              구분: {(workout.workout_type || 'pt') === 'self' ? '개인운동' : 'PT'} · 부위:{' '}
-                              {(workout.body_parts || []).join(', ') || '-'}
-                            </div>
-                          </div>
-                          <div className="button-row">
-                            <button className="secondary-btn" onClick={() => toggleWorkoutDetail(workout.id)}>
-                              {isExpanded ? '간추려보기' : '상세히 보기'}
-                            </button>
-                            <button className="secondary-btn" onClick={() => editWorkoutRecord(workout)}>
-                              수정
-                            </button>
-                            <button className="danger-btn" onClick={() => deleteWorkoutRecord(workout.id)}>
-                              삭제
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="record-summary-grid">
-                          <div className="record-summary-box">
-                            <div className="summary-label">운동 개수</div>
-                            <div className="summary-value">{exerciseCount}개</div>
-                          </div>
-                          <div className="record-summary-box">
-                            <div className="summary-label">총 세트</div>
-                            <div className="summary-value">{totalSets}세트</div>
-                          </div>
-                        </div>
-
-                        {isExpanded && (
-                          <div className="record-detail-list">
-                            {groupedItems.map((item) => (
-                              <div key={item.id} className="record-detail-card">
-                                <div className="record-detail-title">{item.exerciseName}</div>
-
-                                <div className="tag-row" style={{ marginTop: 8 }}>
-                                  <span className="tag">{item.bodyPart}</span>
-                                  <span className="tag">{item.equipmentType}</span>
-                                  <span className="tag">{item.brand}</span>
-                                </div>
-
-                                <div className="history-sets" style={{ marginTop: 10 }}>
-                                  {item.sets.map((setRow) => (
-                                    <span key={setRow.id} className="tag">
-                                      {setRow.setNo}세트 · {setRow.kg}kg · {setRow.reps}회
-                                    </span>
-                                  ))}
-                                </div>
-
-                                {(item.goodPoint || item.improvePoint) && (
-                                  <div className="member-feedback-grid" style={{ marginTop: 12 }}>
-                                    <div className="feedback good">
-                                      <div className="memo-title">잘한 점</div>
-                                      <div>{item.goodPoint || '-'}</div>
-                                    </div>
-                                    <div className="feedback warn">
-                                      <div className="memo-title">보완할 점</div>
-                                      <div>{item.improvePoint || '-'}</div>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </section>
-          </div>
-        </div>
-      )}
-
-      {activeTab === '운동DB' && (
-        <div className="tab-page">
-          <div className="admin-grid">
-            <section className="card section-card">
-              <div className="section-head">
-                <div>
-                  <div className="section-label">브랜드 관리</div>
-                  <h2>브랜드 추가 / 수정 / 삭제</h2>
-                </div>
-              </div>
-
-              {editBrandId && (
-                <div className="form-block" style={{ marginBottom: 16 }}>
-                  <input
-                    placeholder="브랜드 이름"
-                    value={editBrandForm.name}
-                    onChange={(e) => setEditBrandForm({ name: e.target.value })}
-                  />
-                  <div className="button-row">
-                    <button className="primary-btn" onClick={updateBrand}>
-                      브랜드 저장
-                    </button>
-                    <button className="secondary-btn" onClick={closeBrandEdit}>
-                      취소
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div className="form-block">
-                <input
-                  placeholder="브랜드 이름 추가"
-                  value={brandForm}
-                  onChange={(e) => setBrandForm(e.target.value)}
-                />
-                <button className="secondary-btn" onClick={addBrand}>
-                  브랜드 추가
-                </button>
-              </div>
-
-              <div className="list-card-group">
-                {loadingBrands ? (
-                  <div className="muted">브랜드 불러오는 중...</div>
-                ) : (
-                  brands.map((brand) => (
-                    <div className="list-card-row" key={brand.id}>
-                      <div className="list-card-title">{brand.name}</div>
-                      <div className="button-row">
-                        <button className="secondary-btn" onClick={() => openBrandEdit(brand)}>
-                          수정
-                        </button>
-                        <button className="danger-btn" onClick={() => deleteBrand(brand)}>
-                          삭제
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </section>
-
-            <section className="card section-card">
-              <div className="section-head">
-                <div>
-                  <div className="section-label">운동 DB</div>
-                  <h2>운동 추가 / 수정 / 삭제</h2>
-                </div>
-              </div>
-
-              {editExerciseId && (
-                <div className="form-block" style={{ marginBottom: 16 }}>
-                  <input
-                    placeholder="운동명"
-                    value={editExerciseForm.name}
-                    onChange={(e) => setEditExerciseForm({ ...editExerciseForm, name: e.target.value })}
-                  />
-
-                  <div className="grid-3">
-                    <select
-                      value={editExerciseForm.bodyPart}
-                      onChange={(e) => setEditExerciseForm({ ...editExerciseForm, bodyPart: e.target.value })}
-                    >
-                      {bodyPartOptions.map((o) => (
-                        <option key={o}>{o}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={editExerciseForm.equipmentType}
-                      onChange={(e) => setEditExerciseForm({ ...editExerciseForm, equipmentType: e.target.value })}
-                    >
-                      {equipmentTypeOptions.map((o) => (
-                        <option key={o}>{o}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={editExerciseForm.brand}
-                      onChange={(e) => setEditExerciseForm({ ...editExerciseForm, brand: e.target.value })}
-                    >
-                      {brandNames.map((o) => (
-                        <option key={o}>{o}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="button-row">
-                    <button className="primary-btn" onClick={updateExercise}>
-                      운동 저장
-                    </button>
-                    <button className="secondary-btn" onClick={closeExerciseEdit}>
-                      취소
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div className="form-block">
-                <input
-                  placeholder="운동명"
-                  value={exerciseForm.name}
-                  onChange={(e) => setExerciseForm({ ...exerciseForm, name: e.target.value })}
-                />
-                <div className="grid-3">
-                  <select
-                    value={exerciseForm.bodyPart}
-                    onChange={(e) => setExerciseForm({ ...exerciseForm, bodyPart: e.target.value })}
-                  >
-                    {bodyPartOptions.map((o) => (
-                      <option key={o}>{o}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={exerciseForm.equipmentType}
-                    onChange={(e) => setExerciseForm({ ...exerciseForm, equipmentType: e.target.value })}
-                  >
-                    {equipmentTypeOptions.map((o) => (
-                      <option key={o}>{o}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={exerciseForm.brand}
-                    onChange={(e) => setExerciseForm({ ...exerciseForm, brand: e.target.value })}
-                  >
-                    {brandNames.map((o) => (
-                      <option key={o}>{o}</option>
-                    ))}
-                  </select>
-                </div>
-                <button className="secondary-btn" onClick={addExercise}>
-                  운동 추가
-                </button>
-              </div>
-
-              <div className="form-block" style={{ marginTop: 12 }}>
-                <textarea
-                  placeholder={
-                    '대량등록 형식\n예:\n뉴텍 / 플레이트머신 / 가슴 / 시티드 체스트 프레스\n뉴텍 / 핀머신 / 하체 / 레그 익스텐션'
-                  }
-                  value={bulkExerciseText}
-                  onChange={(e) => setBulkExerciseText(e.target.value)}
-                />
-                <button
-                  className="primary-btn"
-                  onClick={importBulkExercises}
-                  disabled={bulkImporting}
+              <label className="field">
+                <span>현재 프로그램</span>
+                <select
+                  value={memberForm.current_program_id}
+                  onChange={(e) => setMemberForm({ ...memberForm, current_program_id: e.target.value })}
                 >
-                  {bulkImporting ? '대량등록 중...' : '운동 일괄 등록'}
+                  <option value="">선택 안함</option>
+                  {programs.map((program) => (
+                    <option key={program.id} value={program.id}>
+                      {program.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="grid-2">
+                <label className="field">
+                  <span>총 세션</span>
+                  <input
+                    type="number"
+                    value={memberForm.total_sessions}
+                    onChange={(e) => setMemberForm({ ...memberForm, total_sessions: e.target.value })}
+                  />
+                </label>
+
+                <label className="field">
+                  <span>사용 세션</span>
+                  <input
+                    type="number"
+                    value={memberForm.used_sessions}
+                    onChange={(e) => setMemberForm({ ...memberForm, used_sessions: e.target.value })}
+                  />
+                </label>
+              </div>
+
+              <div className="grid-2">
+                <label className="field">
+                  <span>시작일</span>
+                  <input
+                    type="date"
+                    value={memberForm.start_date}
+                    onChange={(e) => setMemberForm({ ...memberForm, start_date: e.target.value })}
+                  />
+                </label>
+
+                <label className="field">
+                  <span>종료일</span>
+                  <input
+                    type="date"
+                    value={memberForm.end_date}
+                    onChange={(e) => setMemberForm({ ...memberForm, end_date: e.target.value })}
+                  />
+                </label>
+              </div>
+
+              <label className="field">
+                <span>회원 메모(회원에게 보임)</span>
+                <textarea rows="4" value={memberForm.memo} onChange={(e) => setMemberForm({ ...memberForm, memo: e.target.value })} />
+              </label>
+
+              <label className="field">
+                <span>Access Code</span>
+                <div className="inline-actions">
+                  <input
+                    value={memberForm.access_code}
+                    onChange={(e) => setMemberForm({ ...memberForm, access_code: e.target.value.toUpperCase() })}
+                  />
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    onClick={() => setMemberForm((prev) => ({ ...prev, access_code: randomCode() }))}
+                  >
+                    생성
+                  </button>
+                </div>
+              </label>
+
+              <div className="inline-actions wrap">
+                <button className="primary-btn" type="submit">
+                  {editingMemberId ? '회원 수정' : '회원 추가'}
+                </button>
+                <button type="button" className="secondary-btn" onClick={resetMemberForm}>
+                  초기화
                 </button>
               </div>
+            </form>
+          </section>
 
-              <input
-                placeholder="운동 검색"
-                value={exerciseSearch}
-                onChange={(e) => setExerciseSearch(e.target.value)}
-              />
-
-              <div className="list-card-group">
-                {loadingExercises ? (
-                  <div className="muted">운동DB 불러오는 중...</div>
-                ) : (
-                  filteredExercises.map((exercise) => (
-                    <div className="list-card-row" key={exercise.id}>
-                      <div>
-                        <div className="list-card-title">{exercise.name}</div>
-                        <div className="tag-row" style={{ marginTop: 8 }}>
-                          <span className="tag">{exercise.body_part}</span>
-                          <span className="tag">{exercise.category}</span>
-                          <span className="tag">{exercise.brand_name}</span>
-                        </div>
-                      </div>
-
-                      <div className="button-row">
-                        <button className="secondary-btn" onClick={() => openExerciseEdit(exercise)}>
-                          수정
-                        </button>
-                        <button className="danger-btn" onClick={() => deleteExercise(exercise.id)}>
-                          삭제
-                        </button>
-                      </div>
+          <section className="card">
+            <h2>회원 목록</h2>
+            <div className="list-stack">
+              {memberStats.map((member) => {
+                const isSelected = selectedMemberId === member.id
+                return (
+                  <div
+                    key={member.id}
+                    className={`list-card ${isSelected ? 'selected' : ''}`}
+                    onClick={() => setSelectedMemberId(member.id)}
+                  >
+                    <div className="list-card-top">
+                      <strong>{member.name}</strong>
+                      <span className="pill">남은 {member.remainingSessions}회</span>
                     </div>
-                  ))
-                )}
-              </div>
-            </section>
-          </div>
-        </div>
-      )}
 
-      {activeTab === '식단' && (
-        <div className="tab-page">
-          <section className="card section-card">
-            <div className="section-head">
-              <div>
-                <div className="section-label">회원 식단 관리</div>
-                <h2>{selectedMember ? `${selectedMember.name}님 식단 기록` : '회원 선택 필요'}</h2>
-              </div>
-              <div className="button-row">
-                <input
-                  type="month"
-                  value={dietDateFilter}
-                  onChange={(e) => setDietDateFilter(e.target.value)}
-                  style={{ width: 180 }}
-                />
-              </div>
+                    <div className="compact-text">
+                      목표: {member.goal || '-'} / Access: {member.access_code}
+                    </div>
+                    <div className="compact-text">
+                      PT {member.ptCount}회 / 개인운동 {member.personalCount}회 / 프로그램 {member.programs?.name || '-'}
+                    </div>
+
+                    <div className="inline-actions wrap">
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleMemberEdit(member)
+                        }}
+                      >
+                        수정
+                      </button>
+
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          copyMemberLink(member)
+                        }}
+                      >
+                        링크 복사
+                      </button>
+
+                      <button
+                        type="button"
+                        className="danger-btn"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleMemberDelete(member.id)
+                        }}
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
 
-            {!selectedMember ? (
-              <div className="muted">회원 탭에서 회원을 먼저 선택해 주세요.</div>
-            ) : (
+            {selectedMember ? (
               <>
-                <div className="summary-grid">
-                  <div className="summary-box">
-                    <div className="summary-label">식단 기록 수</div>
-                    <div className="summary-value">{dietSummary.totalMeals}건</div>
+                <div className="sub-card">
+                  <h3>선택 회원 상세 / 루틴 관리</h3>
+                  <div className="detail-box">
+                    <p><strong>이름:</strong> {selectedMember.name}</p>
+                    <p><strong>목표:</strong> {selectedMember.goal || '-'}</p>
+                    <p><strong>프로그램:</strong> {selectedMember.programs?.name || '-'}</p>
+                    <p><strong>기간:</strong> {formatDate(selectedMember.start_date)} ~ {formatDate(selectedMember.end_date)}</p>
+                    <p><strong>회원 메모:</strong> {selectedMember.memo || '-'}</p>
+                    <p><strong>회원 링크:</strong> {window.location.origin}?member={selectedMember.id}</p>
                   </div>
-                  <div className="summary-box">
-                    <div className="summary-label">평균 탄수</div>
-                    <div className="summary-value">{dietSummary.avgCarbs}g</div>
-                  </div>
-                  <div className="summary-box">
-                    <div className="summary-label">평균 단백질</div>
-                    <div className="summary-value">{dietSummary.avgProtein}g</div>
-                  </div>
-                  <div className="summary-box">
-                    <div className="summary-label">평균 지방</div>
-                    <div className="summary-value">{dietSummary.avgFat}g</div>
+
+                  <div className="stack-gap">
+                    <label className="field">
+                      <span>루틴 제목</span>
+                      <input value={routineForm.title} onChange={(e) => setRoutineForm({ ...routineForm, title: e.target.value })} />
+                    </label>
+
+                    <label className="field">
+                      <span>루틴 내용</span>
+                      <textarea rows="6" value={routineForm.content} onChange={(e) => setRoutineForm({ ...routineForm, content: e.target.value })} />
+                    </label>
+
+                    <div className="inline-actions wrap">
+                      <button className="primary-btn" type="button" onClick={handleRoutineSave}>
+                        루틴 저장
+                      </button>
+                      <button className="danger-btn" type="button" onClick={handleRoutineDelete}>
+                        루틴 삭제
+                      </button>
+                    </div>
                   </div>
                 </div>
 
-                {loadingDietLogs ? (
-                  <div className="muted" style={{ marginTop: 16 }}>식단 기록 불러오는 중...</div>
-                ) : dietLogs.length === 0 ? (
-                  <div className="muted" style={{ marginTop: 16 }}>해당 기간 식단 기록이 없습니다.</div>
-                ) : (
-                  <div className="record-list" style={{ marginTop: 16 }}>
-                    {dietLogs.map((log) => {
-                      const isExpanded = expandedDietIds.includes(log.id)
+                <div className="sub-card">
+                  <h3>관리자 전용 메모</h3>
+                  <label className="field">
+                    <span>비공개 메모 입력</span>
+                    <textarea rows="4" value={adminNoteInput} onChange={(e) => setAdminNoteInput(e.target.value)} />
+                  </label>
+                  <button className="primary-btn" type="button" onClick={handleAdminNoteSave}>
+                    메모 저장
+                  </button>
+
+                  <div className="list-stack">
+                    {adminNotes.map((note) => (
+                      <div key={note.id} className="list-card">
+                        <div className="compact-text">{note.note}</div>
+                        <div className="compact-text">수정일: {note.updated_at?.slice(0, 10) || '-'}</div>
+                        <button className="danger-btn" type="button" onClick={() => handleAdminNoteDelete(note.id)}>
+                          삭제
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="sub-card">
+                  <h3>회원 건강정보</h3>
+                  <div className="list-stack">
+                    {memberHealthLogs.length === 0 ? <div className="compact-text">등록된 건강정보가 없습니다.</div> : null}
+                    {memberHealthLogs.map((health) => {
+                      const collapsed = collapsedHealthLogs[health.id] ?? true
                       return (
-                        <div className="record-card" key={log.id}>
-                          <div className="record-card-top">
-                            <div>
-                              <div className="record-date">{log.date}</div>
-                              <div className="record-meta">
-                                {log.meal_type || '-'} · {log.meal_time || '시간 미입력'} · {log.food_name || '-'}
-                              </div>
-                            </div>
-
-                            <div className="button-row">
-                              <div className="pill">배고픔 {log.hunger_level ?? '-'} / 10</div>
-                              <button className="secondary-btn" onClick={() => toggleDietDetail(log.id)}>
-                                {isExpanded ? '간추려보기' : '상세히 보기'}
-                              </button>
-                            </div>
+                        <div key={health.id} className="list-card">
+                          <div className="list-card-top">
+                            <strong>{health.record_date}</strong>
+                            <span className="pill">체중 {health.weight_kg || '-'}kg</span>
                           </div>
-
-                          <div className="record-summary-grid">
-                            <div className="record-summary-box">
-                              <div className="summary-label">탄수</div>
-                              <div className="summary-value">{log.carbs ?? 0}g</div>
-                            </div>
-                            <div className="record-summary-box">
-                              <div className="summary-label">단백질</div>
-                              <div className="summary-value">{log.protein ?? 0}g</div>
-                            </div>
+                          <div className="compact-text">
+                            간략히보기: 키 {health.height_cm || '-'} / 체지방 {health.body_fat_percent || '-'} / 골격근 {health.skeletal_muscle_mass || '-'}
                           </div>
+                          <button
+                            type="button"
+                            className="secondary-btn"
+                            onClick={() =>
+                              setCollapsedHealthLogs((prev) => ({
+                                ...prev,
+                                [health.id]: !collapsed,
+                              }))
+                            }
+                          >
+                            {collapsed ? '상세히보기' : '간략히보기'}
+                          </button>
 
-                          {!isExpanded ? null : (
-                            <>
-                              <div className="summary-grid" style={{ marginTop: 12 }}>
-                                <div className="summary-box">
-                                  <div className="summary-label">음식명</div>
-                                  <div className="summary-value" style={{ fontSize: 16 }}>
-                                    {log.food_name || '-'}
-                                  </div>
-                                </div>
-                                <div className="summary-box">
-                                  <div className="summary-label">양</div>
-                                  <div className="summary-value" style={{ fontSize: 16 }}>
-                                    {log.amount || '-'}
-                                  </div>
-                                </div>
-                                <div className="summary-box">
-                                  <div className="summary-label">탄수</div>
-                                  <div className="summary-value">{log.carbs ?? 0}g</div>
-                                </div>
-                                <div className="summary-box">
-                                  <div className="summary-label">단백질</div>
-                                  <div className="summary-value">{log.protein ?? 0}g</div>
-                                </div>
-                                <div className="summary-box">
-                                  <div className="summary-label">지방</div>
-                                  <div className="summary-value">{log.fat ?? 0}g</div>
-                                </div>
-                                <div className="summary-box">
-                                  <div className="summary-label">회원 메모</div>
-                                  <div className="summary-value" style={{ fontSize: 16 }}>
-                                    {log.memo || '-'}
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="form-block" style={{ marginTop: 14 }}>
-                                <label>관리자 피드백</label>
-                                <textarea
-                                  value={dietFeedbackDrafts[log.id] || ''}
-                                  onChange={(e) =>
-                                    setDietFeedbackDrafts((prev) => ({
-                                      ...prev,
-                                      [log.id]: e.target.value,
-                                    }))
-                                  }
-                                  placeholder="식단 피드백 입력"
-                                />
-                                <div className="button-row">
-                                  <button
-                                    className="primary-btn"
-                                    onClick={() => saveDietFeedback(log.id)}
-                                    disabled={savingDietFeedbackId === log.id}
-                                  >
-                                    {savingDietFeedbackId === log.id ? '저장 중...' : '피드백 저장'}
-                                  </button>
-                                  <button
-                                    className="danger-btn"
-                                    onClick={() => deleteDietLog(log.id)}
-                                  >
-                                    삭제
-                                  </button>
-                                </div>
-                              </div>
-                            </>
-                          )}
+                          {!collapsed ? (
+                            <div className="detail-box">
+                              <p><strong>키:</strong> {health.height_cm || '-'}</p>
+                              <p><strong>체중:</strong> {health.weight_kg || '-'}</p>
+                              <p><strong>체지방:</strong> {health.body_fat_percent || '-'}</p>
+                              <p><strong>골격근량:</strong> {health.skeletal_muscle_mass || '-'}</p>
+                              <p><strong>병력사항:</strong> {health.medical_history || '-'}</p>
+                              <p><strong>회원 메모:</strong> {health.member_note || '-'}</p>
+                              <p><strong>인바디 이미지 URL:</strong> {health.inbody_image_url || '-'}</p>
+                            </div>
+                          ) : null}
                         </div>
                       )
                     })}
                   </div>
-                )}
+                </div>
               </>
-            )}
+            ) : null}
           </section>
         </div>
       )}
 
-      {activeTab === '통계' && (
-        <div className="tab-page">
-          <section className="card section-card">
-            <div className="section-head">
-              <div>
-                <div className="section-label">이번달 운동 현황</div>
-                <h2>{selectedMember ? `${selectedMember.name}님 통계` : '회원 선택 필요'}</h2>
+      {activeTab === '기록작성' && (
+        <div className="two-col">
+          <section className="card">
+            <h2>운동 기록 작성 / 수정</h2>
+            <form className="stack-gap" onSubmit={handleWorkoutSubmit}>
+              <div className="grid-2">
+                <label className="field">
+                  <span>회원 선택</span>
+                  <select value={workoutForm.member_id} onChange={(e) => setWorkoutForm({ ...workoutForm, member_id: e.target.value })}>
+                    <option value="">회원 선택</option>
+                    {members.map((member) => (
+                      <option key={member.id} value={member.id}>
+                        {member.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="field">
+                  <span>날짜</span>
+                  <input
+                    type="date"
+                    value={workoutForm.workout_date}
+                    onChange={(e) => setWorkoutForm({ ...workoutForm, workout_date: e.target.value })}
+                  />
+                </label>
               </div>
+
+              <label className="field">
+                <span>기록 타입</span>
+                <select value={workoutForm.workout_type} onChange={(e) => setWorkoutForm({ ...workoutForm, workout_type: e.target.value })}>
+                  <option value="pt">PT</option>
+                  <option value="personal">개인운동</option>
+                </select>
+              </label>
+
+              <div className="stack-gap">
+                {workoutForm.items.map((item, itemIndex) => (
+                  <div key={itemIndex} className="sub-card">
+                    <div className="list-card-top">
+                      <strong>운동 {itemIndex + 1}</strong>
+                      <button
+                        type="button"
+                        className="danger-btn"
+                        onClick={() => removeWorkoutItem(itemIndex)}
+                        disabled={workoutForm.items.length === 1}
+                      >
+                        운동 삭제
+                      </button>
+                    </div>
+
+                    <label className="field">
+                      <span>운동DB 선택</span>
+                      <select value={item.exercise_id} onChange={(e) => updateWorkoutItemSelect(itemIndex, e.target.value)}>
+                        <option value="">선택 안함</option>
+                        {exercises.map((exercise) => (
+                          <option key={exercise.id} value={exercise.id}>
+                            [{exercise.brands?.name || '브랜드없음'}] {exercise.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="field">
+                      <span>운동명 직접 입력</span>
+                      <input
+                        value={item.exercise_name_snapshot}
+                        onChange={(e) => updateWorkoutItemName(itemIndex, e.target.value)}
+                        placeholder="예: 힙쓰러스트, 밴드 워크, 스쿼트"
+                      />
+                    </label>
+
+                    <div className="stack-gap">
+                      {item.sets.map((setRow, setIndex) => (
+                        <div className="set-row" key={setIndex}>
+                          <input
+                            placeholder="kg"
+                            value={setRow.kg}
+                            onChange={(e) => updateSetValue(itemIndex, setIndex, 'kg', e.target.value)}
+                          />
+                          <input
+                            placeholder="reps"
+                            value={setRow.reps}
+                            onChange={(e) => updateSetValue(itemIndex, setIndex, 'reps', e.target.value)}
+                          />
+                          <button
+                            type="button"
+                            className="danger-btn"
+                            onClick={() => removeSet(itemIndex, setIndex)}
+                            disabled={item.sets.length === 1}
+                          >
+                            세트 삭제
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    <button type="button" className="secondary-btn" onClick={() => addSet(itemIndex)}>
+                      세트 추가
+                    </button>
+                  </div>
+                ))}
+
+                <button type="button" className="secondary-btn" onClick={addWorkoutItem}>
+                  운동 추가
+                </button>
+              </div>
+
+              <label className="field">
+                <span>잘한점</span>
+                <textarea rows="3" value={workoutForm.good} onChange={(e) => setWorkoutForm({ ...workoutForm, good: e.target.value })} />
+              </label>
+
+              <label className="field">
+                <span>보완점</span>
+                <textarea rows="3" value={workoutForm.improve} onChange={(e) => setWorkoutForm({ ...workoutForm, improve: e.target.value })} />
+              </label>
+
+              <div className="inline-actions wrap">
+                <button className="primary-btn" type="submit">
+                  {workoutForm.id ? '운동 기록 수정' : '운동 기록 저장'}
+                </button>
+                <button type="button" className="secondary-btn" onClick={resetWorkoutForm}>
+                  작성 초기화
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <section className="card">
+            <h2>운동 기록 목록</h2>
+            <div className="list-stack">
+              {workouts.map((workout) => {
+                const member = members.find((item) => item.id === workout.member_id)
+                const items = workoutItemsMap[workout.id] || []
+                const collapsed = collapsedWorkouts[workout.id] ?? true
+
+                return (
+                  <div key={workout.id} className="list-card">
+                    <div className="list-card-top">
+                      <strong>{member?.name || '회원없음'} / {workout.workout_type === 'pt' ? 'PT' : '개인운동'}</strong>
+                      <span className="pill">{workout.workout_date}</span>
+                    </div>
+
+                    <div className="compact-text">
+                      간략히보기: 운동 {items.length}개 / 총세트 {getTotalSetCount(items)}세트
+                    </div>
+
+                    <div className="inline-actions wrap">
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        onClick={() =>
+                          setCollapsedWorkouts((prev) => ({
+                            ...prev,
+                            [workout.id]: !collapsed,
+                          }))
+                        }
+                      >
+                        {collapsed ? '상세히보기' : '간략히보기'}
+                      </button>
+
+                      <button type="button" className="secondary-btn" onClick={() => handleWorkoutEdit(workout)}>
+                        수정
+                      </button>
+
+                      <button type="button" className="danger-btn" onClick={() => handleWorkoutDelete(workout)}>
+                        삭제
+                      </button>
+                    </div>
+
+                    {!collapsed ? (
+                      <div className="detail-box">
+                        {items.map((item) => (
+                          <div key={item.id} className="record-item-box">
+                            <strong>{item.exercise_name_snapshot}</strong>
+                            <ul className="set-list">
+                              {(item.sets || []).map((setRow, idx) => (
+                                <li key={idx}>
+                                  {idx + 1}세트 - {setRow.kg || '-'}kg / {setRow.reps || '-'}회
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                        <p><strong>잘한점:</strong> {workout.good || '-'}</p>
+                        <p><strong>보완점:</strong> {workout.improve || '-'}</p>
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {activeTab === '운동DB' && (
+        <div className="two-col">
+          <section className="card">
+            <h2>브랜드 관리</h2>
+            <form className="stack-gap" onSubmit={handleBrandSubmit}>
+              <label className="field">
+                <span>브랜드명</span>
+                <input value={brandForm.name} onChange={(e) => setBrandForm({ name: e.target.value })} />
+              </label>
+
+              <div className="inline-actions wrap">
+                <button className="primary-btn" type="submit">
+                  {editingBrandId ? '브랜드 수정' : '브랜드 추가'}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  onClick={() => {
+                    setBrandForm(emptyBrandForm)
+                    setEditingBrandId(null)
+                  }}
+                >
+                  초기화
+                </button>
+              </div>
+            </form>
+
+            <div className="list-stack">
+              {brands.map((brand) => (
+                <div key={brand.id} className="list-card">
+                  <div className="list-card-top">
+                    <strong>{brand.name}</strong>
+                  </div>
+                  <div className="inline-actions wrap">
+                    <button
+                      type="button"
+                      className="secondary-btn"
+                      onClick={() => {
+                        setEditingBrandId(brand.id)
+                        setBrandForm({ name: brand.name })
+                      }}
+                    >
+                      수정
+                    </button>
+                    <button type="button" className="danger-btn" onClick={() => handleBrandDelete(brand.id)}>
+                      삭제
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="card">
+            <div className="section-head">
+              <h2>운동 관리</h2>
+              <button type="button" className="secondary-btn" onClick={() => setShowBulkInput((prev) => !prev)}>
+                {showBulkInput ? '개별 입력만 보기' : '일괄 입력 열기'}
+              </button>
             </div>
 
-            {!selectedMember ? (
-              <div className="muted">회원 탭에서 회원을 먼저 선택해 주세요.</div>
-            ) : (
-              <>
-                <div className="summary-grid">
-                  <div className="summary-box">
-                    <div className="summary-label">이번달 총 운동</div>
-                    <div className="summary-value">{currentMonthTotal}회</div>
-                  </div>
-                  <div className="summary-box">
-                    <div className="summary-label">이번달 PT</div>
-                    <div className="summary-value">{currentMonthPtCount}회</div>
-                  </div>
-                  <div className="summary-box">
-                    <div className="summary-label">이번달 개인운동</div>
-                    <div className="summary-value">{currentMonthSelfCount}회</div>
-                  </div>
-                  <div className="summary-box">
-                    <div className="summary-label">남은 세션</div>
-                    <div className="summary-value">
-                      {Math.max(selectedMember.total_sessions - selectedMember.used_sessions, 0)}회
+            <form className="stack-gap" onSubmit={handleExerciseSubmit}>
+              <label className="field">
+                <span>운동명</span>
+                <input value={exerciseForm.name} onChange={(e) => setExerciseForm({ ...exerciseForm, name: e.target.value })} />
+              </label>
+
+              <div className="grid-3">
+                <label className="field">
+                  <span>부위</span>
+                  <input value={exerciseForm.body_part} onChange={(e) => setExerciseForm({ ...exerciseForm, body_part: e.target.value })} />
+                </label>
+                <label className="field">
+                  <span>카테고리</span>
+                  <input value={exerciseForm.category} onChange={(e) => setExerciseForm({ ...exerciseForm, category: e.target.value })} />
+                </label>
+                <label className="field">
+                  <span>브랜드</span>
+                  <select value={exerciseForm.brand_id} onChange={(e) => setExerciseForm({ ...exerciseForm, brand_id: e.target.value })}>
+                    <option value="">선택 안함</option>
+                    {brands.map((brand) => (
+                      <option key={brand.id} value={brand.id}>
+                        {brand.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="inline-actions wrap">
+                <button className="primary-btn" type="submit">
+                  {editingExerciseId ? '운동 수정' : '운동 추가'}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  onClick={() => {
+                    setEditingExerciseId(null)
+                    setExerciseForm(emptyExerciseForm)
+                  }}
+                >
+                  초기화
+                </button>
+              </div>
+            </form>
+
+            {showBulkInput ? (
+              <div className="sub-card">
+                <h3>운동DB 일괄 입력</h3>
+                <p className="sub-text">형식: 브랜드|운동명|부위|카테고리</p>
+                <label className="field">
+                  <span>여러 줄 입력</span>
+                  <textarea rows="8" value={bulkExerciseText} onChange={(e) => setBulkExerciseText(e.target.value)} />
+                </label>
+                <button type="button" className="primary-btn" onClick={handleBulkExerciseInsert}>
+                  일괄 등록
+                </button>
+              </div>
+            ) : null}
+
+            <label className="field">
+              <span>검색</span>
+              <input value={exerciseSearch} onChange={(e) => setExerciseSearch(e.target.value)} placeholder="운동명 / 브랜드 / 부위" />
+            </label>
+
+            <div className="list-stack">
+              {filteredExercises.map((exercise) => {
+                const collapsed = collapsedExercises[exercise.id] ?? true
+                return (
+                  <div key={exercise.id} className="list-card">
+                    <div className="list-card-top">
+                      <strong>{exercise.name}</strong>
+                      <span className="pill">{exercise.brands?.name || '브랜드없음'}</span>
                     </div>
+
+                    <div className="compact-text">
+                      간략히보기: {exercise.body_part || '-'} / {exercise.category || '-'}
+                    </div>
+
+                    <div className="inline-actions wrap">
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        onClick={() =>
+                          setCollapsedExercises((prev) => ({
+                            ...prev,
+                            [exercise.id]: !collapsed,
+                          }))
+                        }
+                      >
+                        {collapsed ? '상세히보기' : '간략히보기'}
+                      </button>
+
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        onClick={() => {
+                          setEditingExerciseId(exercise.id)
+                          setExerciseForm({
+                            name: exercise.name || '',
+                            body_part: exercise.body_part || '',
+                            category: exercise.category || '',
+                            brand_id: exercise.brand_id || '',
+                          })
+                        }}
+                      >
+                        수정
+                      </button>
+
+                      <button type="button" className="danger-btn" onClick={() => handleExerciseDelete(exercise.id)}>
+                        삭제
+                      </button>
+                    </div>
+
+                    {!collapsed ? (
+                      <div className="detail-box">
+                        <p><strong>운동명:</strong> {exercise.name}</p>
+                        <p><strong>브랜드:</strong> {exercise.brands?.name || '-'}</p>
+                        <p><strong>부위:</strong> {exercise.body_part || '-'}</p>
+                        <p><strong>카테고리:</strong> {exercise.category || '-'}</p>
+                      </div>
+                    ) : null}
                   </div>
+                )
+              })}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {activeTab === '식단' && (
+        <div className="card">
+          <div className="section-head">
+            <h2>식단 기록</h2>
+            <select value={dietMemberFilter} onChange={(e) => setDietMemberFilter(e.target.value)}>
+              <option value="">전체 회원</option>
+              {members.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="list-stack">
+            {displayedDietLogs.map((diet) => {
+              const collapsed = collapsedDiets[diet.id] ?? true
+              const member = members.find((item) => item.id === diet.member_id)
+
+              return (
+                <DietAdminCard
+                  key={diet.id}
+                  diet={diet}
+                  memberName={member?.name || '회원없음'}
+                  collapsed={collapsed}
+                  onToggle={() =>
+                    setCollapsedDiets((prev) => ({
+                      ...prev,
+                      [diet.id]: !collapsed,
+                    }))
+                  }
+                  onSave={handleDietFeedbackSave}
+                  onDelete={handleDietDelete}
+                />
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {activeTab === '통계' && (
+        <div className="stack-gap">
+          <div className="stats-grid">
+            <div className="stat-card">
+              <span>이번달 PT 수</span>
+              <strong>{monthlyStats.ptCount}</strong>
+            </div>
+            <div className="stat-card">
+              <span>이번달 개인운동 수</span>
+              <strong>{monthlyStats.personalCount}</strong>
+            </div>
+            <div className="stat-card">
+              <span>전체 남은 세션</span>
+              <strong>{monthlyStats.remainingSessions}</strong>
+            </div>
+          </div>
+
+          <div className="card">
+            <h2>회원별 통계</h2>
+            <div className="list-stack">
+              {memberStats.map((member) => (
+                <div key={member.id} className="list-card">
+                  <div className="list-card-top">
+                    <strong>{member.name}</strong>
+                    <span className="pill">남은 {member.remainingSessions}회</span>
+                  </div>
+                  <div className="compact-text">
+                    PT {member.ptCount}회 / 개인운동 {member.personalCount}회 / 총 세션 {member.total_sessions || 0}회
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === '코치스케줄' && (
+        <div className="two-col">
+          <section className="card">
+            <h2>코치 스케줄 등록 / 수정</h2>
+
+            <div className="stack-gap">
+              <label className="field">
+                <span>코치 선택</span>
+                <select value={selectedCoachId} onChange={(e) => setSelectedCoachId(e.target.value)}>
+                  <option value="">코치 선택</option>
+                  {coaches.map((coach) => (
+                    <option key={coach.id} value={coach.id}>
+                      {coach.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="field">
+                <span>날짜</span>
+                <input
+                  type="date"
+                  value={scheduleForm.schedule_date}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, schedule_date: e.target.value })}
+                />
+              </label>
+
+              <div className="grid-2">
+                <label className="checkbox-line">
+                  <input
+                    type="checkbox"
+                    checked={scheduleForm.is_working}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, is_working: e.target.checked })}
+                  />
+                  <span>근무일</span>
+                </label>
+
+                <label className="checkbox-line">
+                  <input
+                    type="checkbox"
+                    checked={scheduleForm.is_weekend_work}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, is_weekend_work: e.target.checked })}
+                  />
+                  <span>주말 근무</span>
+                </label>
+              </div>
+
+              <div className="grid-2">
+                <label className="field">
+                  <span>근무 시작</span>
+                  <input
+                    type="time"
+                    value={scheduleForm.work_start}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, work_start: e.target.value })}
+                    disabled={!scheduleForm.is_working}
+                  />
+                </label>
+
+                <label className="field">
+                  <span>근무 종료</span>
+                  <input
+                    type="time"
+                    value={scheduleForm.work_end}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, work_end: e.target.value })}
+                    disabled={!scheduleForm.is_working}
+                  />
+                </label>
+              </div>
+
+              <div className="field">
+                <span>한가한 시간 체크</span>
+                <div className="slot-grid">
+                  {timeSlotOptions.map((slot) => {
+                    const checked = scheduleForm.selectedSlots.includes(slot)
+                    return (
+                      <label key={slot} className={`slot-chip ${checked ? 'active' : ''}`}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleScheduleSlot(slot)}
+                          disabled={!scheduleForm.is_working}
+                        />
+                        <span>{slot}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <label className="field">
+                <span>메모</span>
+                <textarea rows="4" value={scheduleForm.memo} onChange={(e) => setScheduleForm({ ...scheduleForm, memo: e.target.value })} />
+              </label>
+
+              <div className="inline-actions wrap">
+                <button type="button" className="primary-btn" onClick={handleScheduleSave}>
+                  스케줄 저장
+                </button>
+                <button type="button" className="secondary-btn" onClick={resetScheduleForm}>
+                  초기화
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="card">
+            <div className="section-head">
+              <h2>월별 코치 스케줄</h2>
+              <input type="month" value={scheduleMonth} onChange={(e) => setScheduleMonth(e.target.value)} />
+            </div>
+
+            <div className="list-stack">
+              {filteredSchedules.map((schedule) => {
+                const coach = coaches.find((item) => item.id === schedule.coach_id)
+                const collapsed = collapsedSchedules[schedule.id] ?? true
+                const slots = coachScheduleSlotsMap[schedule.id] || []
+
+                return (
+                  <div key={schedule.id} className="list-card">
+                    <div className="list-card-top">
+                      <strong>{coach?.name || '코치없음'} / {schedule.schedule_date}</strong>
+                      <span className="pill">
+                        {schedule.is_working ? '근무' : '휴무'}
+                        {schedule.is_weekend_work ? ' / 주말근무' : ''}
+                      </span>
+                    </div>
+
+                    <div className="compact-text">
+                      간략히보기: {schedule.is_working ? `${schedule.work_start || '-'} ~ ${schedule.work_end || '-'}` : '휴무'} / 가능시간 {slots.length}개
+                    </div>
+
+                    <div className="inline-actions wrap">
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        onClick={() =>
+                          setCollapsedSchedules((prev) => ({
+                            ...prev,
+                            [schedule.id]: !collapsed,
+                          }))
+                        }
+                      >
+                        {collapsed ? '상세히보기' : '간략히보기'}
+                      </button>
+
+                      <button type="button" className="secondary-btn" onClick={() => handleScheduleEdit(schedule)}>
+                        수정
+                      </button>
+
+                      <button type="button" className="danger-btn" onClick={() => handleScheduleDelete(schedule.id)}>
+                        삭제
+                      </button>
+                    </div>
+
+                    {!collapsed ? (
+                      <div className="detail-box">
+                        <p><strong>근무상태:</strong> {schedule.is_working ? '근무' : '휴무'}</p>
+                        <p><strong>주말근무:</strong> {schedule.is_weekend_work ? '예' : '아니오'}</p>
+                        <p><strong>근무시간:</strong> {schedule.work_start || '-'} ~ {schedule.work_end || '-'}</p>
+                        <p><strong>메모:</strong> {schedule.memo || '-'}</p>
+                        <p><strong>가능시간:</strong> {slots.length > 0 ? slots.map((slot) => slot.slot_time).join(', ') : '없음'}</p>
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {activeTab === '매출기록' && (
+        <div className="stack-gap">
+          <div className="two-col">
+            <section className="card">
+              <h2>매출 기록 입력 / 수정</h2>
+              <form className="stack-gap" onSubmit={handleSaleSubmit}>
+                <div className="grid-2">
+                  <label className="field">
+                    <span>회원</span>
+                    <select value={saleForm.member_id} onChange={(e) => setSaleForm({ ...saleForm, member_id: e.target.value })}>
+                      <option value="">선택 안함</option>
+                      {members.map((member) => (
+                        <option key={member.id} value={member.id}>
+                          {member.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="field">
+                    <span>프로그램</span>
+                    <select value={saleForm.program_id} onChange={(e) => setSaleForm({ ...saleForm, program_id: e.target.value })}>
+                      <option value="">선택 안함</option>
+                      {programs.map((program) => (
+                        <option key={program.id} value={program.id}>
+                          {program.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
 
-                <div className="memo-box">
-                  <div className="memo-title">이번달 요약</div>
-                  <div>
-                    이번달 총 {currentMonthTotal}번 운동했고, 그중 PT는 {currentMonthPtCount}번,
-                    개인운동은 {currentMonthSelfCount}번입니다.
+                <div className="grid-2">
+                  <label className="field">
+                    <span>결제일</span>
+                    <input type="date" value={saleForm.sale_date} onChange={(e) => setSaleForm({ ...saleForm, sale_date: e.target.value })} />
+                  </label>
+
+                  <label className="field">
+                    <span>금액</span>
+                    <input type="number" value={saleForm.amount} onChange={(e) => setSaleForm({ ...saleForm, amount: e.target.value })} />
+                  </label>
+                </div>
+
+                <div className="grid-2">
+                  <label className="field">
+                    <span>결제방법</span>
+                    <select value={saleForm.payment_method} onChange={(e) => setSaleForm({ ...saleForm, payment_method: e.target.value })}>
+                      <option value="현금">현금</option>
+                      <option value="카드">카드</option>
+                      <option value="이체">이체</option>
+                      <option value="할부">할부</option>
+                    </select>
+                  </label>
+
+                  <label className="field">
+                    <span>할부 개월수</span>
+                    <input
+                      type="number"
+                      value={saleForm.installment_months}
+                      onChange={(e) => setSaleForm({ ...saleForm, installment_months: e.target.value })}
+                    />
+                  </label>
+                </div>
+
+                <div className="grid-2">
+                  <label className="field">
+                    <span>구매 세션</span>
+                    <input
+                      type="number"
+                      value={saleForm.purchased_session_count}
+                      onChange={(e) => setSaleForm({ ...saleForm, purchased_session_count: e.target.value })}
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>서비스 세션</span>
+                    <input
+                      type="number"
+                      value={saleForm.service_session_count}
+                      onChange={(e) => setSaleForm({ ...saleForm, service_session_count: e.target.value })}
+                    />
+                  </label>
+                </div>
+
+                <div className="grid-2">
+                  <label className="checkbox-line">
+                    <input
+                      type="checkbox"
+                      checked={saleForm.cash_receipt_issued}
+                      onChange={(e) => setSaleForm({ ...saleForm, cash_receipt_issued: e.target.checked })}
+                    />
+                    <span>현금영수증 발행</span>
+                  </label>
+
+                  <label className="checkbox-line">
+                    <input
+                      type="checkbox"
+                      checked={saleForm.is_vip}
+                      onChange={(e) => setSaleForm({ ...saleForm, is_vip: e.target.checked })}
+                    />
+                    <span>VIP</span>
+                  </label>
+                </div>
+
+                <label className="field">
+                  <span>메모</span>
+                  <textarea rows="4" value={saleForm.memo} onChange={(e) => setSaleForm({ ...saleForm, memo: e.target.value })} />
+                </label>
+
+                <div className="inline-actions wrap">
+                  <button className="primary-btn" type="submit">
+                    {editingSaleId ? '매출 수정' : '매출 저장'}
+                  </button>
+                  <button type="button" className="secondary-btn" onClick={resetSaleForm}>
+                    초기화
+                  </button>
+                </div>
+              </form>
+            </section>
+
+            <section className="card">
+              <div className="section-head">
+                <h2>월별 매출 요약</h2>
+                <input type="month" value={saleMonth} onChange={(e) => setSaleMonth(e.target.value)} />
+              </div>
+
+              <div className="stats-grid">
+                <div className="stat-card">
+                  <span>총 매출</span>
+                  <strong>{Number(salesSummary?.total_sales || 0).toLocaleString()}</strong>
+                </div>
+                <div className="stat-card">
+                  <span>등록 건수</span>
+                  <strong>{Number(salesSummary?.total_count || 0)}</strong>
+                </div>
+                <div className="stat-card">
+                  <span>VIP 결제 수</span>
+                  <strong>{Number(salesSummary?.vip_sales_count || 0)}</strong>
+                </div>
+              </div>
+
+              <div className="detail-box">
+                <p><strong>현금:</strong> {Number(salesSummary?.cash_sales || 0).toLocaleString()}</p>
+                <p><strong>카드:</strong> {Number(salesSummary?.card_sales || 0).toLocaleString()}</p>
+                <p><strong>이체:</strong> {Number(salesSummary?.transfer_sales || 0).toLocaleString()}</p>
+                <p><strong>할부:</strong> {Number(salesSummary?.installment_sales || 0).toLocaleString()}</p>
+                <p><strong>자동 피드백:</strong> {getSalesAutoFeedback()}</p>
+              </div>
+            </section>
+          </div>
+
+          <div className="card">
+            <h2>매출 목록</h2>
+            <div className="list-stack">
+              {filteredSales.map((sale) => (
+                <div key={sale.id} className="list-card">
+                  <div className="list-card-top">
+                    <strong>{sale.members?.name || '회원없음'} / {sale.programs?.name || '프로그램없음'}</strong>
+                    <span className="pill">{sale.sale_date}</span>
+                  </div>
+                  <div className="compact-text">
+                    {Number(sale.amount || 0).toLocaleString()}원 / {sale.payment_method} / 구매 {sale.purchased_session_count}회 / 서비스 {sale.service_session_count}회
+                  </div>
+                  <div className="inline-actions wrap">
+                    <button className="secondary-btn" type="button" onClick={() => handleSaleEdit(sale)}>
+                      수정
+                    </button>
+                    <button className="danger-btn" type="button" onClick={() => handleSaleDelete(sale.id)}>
+                      삭제
+                    </button>
                   </div>
                 </div>
-              </>
-            )}
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === '프로그램' && (
+        <div className="two-col">
+          <section className="card">
+            <h2>프로그램 등록 / 수정</h2>
+            <form className="stack-gap" onSubmit={handleProgramSubmit}>
+              <label className="field">
+                <span>프로그램명</span>
+                <input value={programForm.name} onChange={(e) => setProgramForm({ ...programForm, name: e.target.value })} />
+              </label>
+
+              <div className="grid-2">
+                <label className="field">
+                  <span>가격</span>
+                  <input type="number" value={programForm.price} onChange={(e) => setProgramForm({ ...programForm, price: e.target.value })} />
+                </label>
+                <label className="field">
+                  <span>횟수</span>
+                  <input type="number" value={programForm.session_count} onChange={(e) => setProgramForm({ ...programForm, session_count: e.target.value })} />
+                </label>
+              </div>
+
+              <label className="field">
+                <span>설명</span>
+                <textarea rows="5" value={programForm.description} onChange={(e) => setProgramForm({ ...programForm, description: e.target.value })} />
+              </label>
+
+              <div className="grid-2">
+                <label className="checkbox-line">
+                  <input
+                    type="checkbox"
+                    checked={programForm.is_vip}
+                    onChange={(e) => setProgramForm({ ...programForm, is_vip: e.target.checked })}
+                  />
+                  <span>VIP 프로그램</span>
+                </label>
+
+                <label className="checkbox-line">
+                  <input
+                    type="checkbox"
+                    checked={programForm.is_active}
+                    onChange={(e) => setProgramForm({ ...programForm, is_active: e.target.checked })}
+                  />
+                  <span>활성 상태</span>
+                </label>
+              </div>
+
+              <div className="inline-actions wrap">
+                <button className="primary-btn" type="submit">
+                  {editingProgramId ? '프로그램 수정' : '프로그램 추가'}
+                </button>
+                <button type="button" className="secondary-btn" onClick={resetProgramForm}>
+                  초기화
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <section className="card">
+            <h2>프로그램 목록</h2>
+            <div className="list-stack">
+              {programs.map((program) => (
+                <div key={program.id} className="list-card">
+                  <div className="list-card-top">
+                    <strong>{program.name}</strong>
+                    <span className="pill">{program.is_vip ? 'VIP' : '일반'}</span>
+                  </div>
+                  <div className="compact-text">
+                    {Number(program.price || 0).toLocaleString()}원 / {program.session_count}회 / {program.is_active ? '활성' : '비활성'}
+                  </div>
+                  <div className="inline-actions wrap">
+                    <button className="secondary-btn" type="button" onClick={() => handleProgramEdit(program)}>
+                      수정
+                    </button>
+                    <button className="danger-btn" type="button" onClick={() => handleProgramDelete(program.id)}>
+                      삭제
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {activeTab === '공지사항' && (
+        <div className="two-col">
+          <section className="card">
+            <h2>공지 / 이벤트 등록</h2>
+            <form className="stack-gap" onSubmit={handleNoticeSubmit}>
+              <label className="field">
+                <span>제목</span>
+                <input value={noticeForm.title} onChange={(e) => setNoticeForm({ ...noticeForm, title: e.target.value })} />
+              </label>
+
+              <label className="field">
+                <span>카테고리</span>
+                <select value={noticeForm.category} onChange={(e) => setNoticeForm({ ...noticeForm, category: e.target.value })}>
+                  <option value="공지">공지</option>
+                  <option value="이벤트">이벤트</option>
+                  <option value="운동영상">운동영상</option>
+                </select>
+              </label>
+
+              <label className="field">
+                <span>내용</span>
+                <textarea rows="6" value={noticeForm.content} onChange={(e) => setNoticeForm({ ...noticeForm, content: e.target.value })} />
+              </label>
+
+              <label className="field">
+                <span>이미지 URL</span>
+                <input value={noticeForm.image_url} onChange={(e) => setNoticeForm({ ...noticeForm, image_url: e.target.value })} />
+              </label>
+
+              <label className="field">
+                <span>영상 URL</span>
+                <input value={noticeForm.video_url} onChange={(e) => setNoticeForm({ ...noticeForm, video_url: e.target.value })} />
+              </label>
+
+              <div className="grid-2">
+                <label className="field">
+                  <span>시작일</span>
+                  <input type="date" value={noticeForm.starts_at} onChange={(e) => setNoticeForm({ ...noticeForm, starts_at: e.target.value })} />
+                </label>
+
+                <label className="field">
+                  <span>종료일</span>
+                  <input type="date" value={noticeForm.ends_at} onChange={(e) => setNoticeForm({ ...noticeForm, ends_at: e.target.value })} />
+                </label>
+              </div>
+
+              <label className="checkbox-line">
+                <input
+                  type="checkbox"
+                  checked={noticeForm.is_published}
+                  onChange={(e) => setNoticeForm({ ...noticeForm, is_published: e.target.checked })}
+                />
+                <span>게시중</span>
+              </label>
+
+              <div className="inline-actions wrap">
+                <button className="primary-btn" type="submit">
+                  {editingNoticeId ? '공지 수정' : '공지 등록'}
+                </button>
+                <button type="button" className="secondary-btn" onClick={resetNoticeForm}>
+                  초기화
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <section className="card">
+            <h2>공지 / 이벤트 목록</h2>
+            <div className="list-stack">
+              {notices.map((notice) => {
+                const collapsed = collapsedNotices[notice.id] ?? true
+                return (
+                  <div key={notice.id} className="list-card">
+                    <div className="list-card-top">
+                      <strong>{notice.title}</strong>
+                      <span className="pill">{notice.category}</span>
+                    </div>
+
+                    <div className="compact-text">
+                      간략히보기: {notice.content.slice(0, 40)}{notice.content.length > 40 ? '...' : ''}
+                    </div>
+
+                    <div className="inline-actions wrap">
+                      <button
+                        className="secondary-btn"
+                        type="button"
+                        onClick={() =>
+                          setCollapsedNotices((prev) => ({
+                            ...prev,
+                            [notice.id]: !collapsed,
+                          }))
+                        }
+                      >
+                        {collapsed ? '상세히보기' : '간략히보기'}
+                      </button>
+
+                      <button className="secondary-btn" type="button" onClick={() => handleNoticeEdit(notice)}>
+                        수정
+                      </button>
+
+                      <button className="danger-btn" type="button" onClick={() => handleNoticeDelete(notice.id)}>
+                        삭제
+                      </button>
+                    </div>
+
+                    {!collapsed ? (
+                      <div className="detail-box">
+                        <p><strong>내용:</strong> {notice.content || '-'}</p>
+                        <p><strong>이미지 URL:</strong> {notice.image_url || '-'}</p>
+                        <p><strong>영상 URL:</strong> {notice.video_url || '-'}</p>
+                        <p><strong>기간:</strong> {formatDate(notice.starts_at)} ~ {formatDate(notice.ends_at)}</p>
+                        <p><strong>게시상태:</strong> {notice.is_published ? '게시중' : '숨김'}</p>
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
           </section>
         </div>
       )}
 
       {activeTab === '사용방법' && (
-        <div className="tab-page">
-          <section className="card section-card">
-            <div className="section-head">
-              <div>
-                <div className="section-label">사용방법 메뉴얼</div>
-                <h2>{manualTitle || '더피트니스 화정점 사용방법'}</h2>
-              </div>
-              {loadingManual && <div className="muted">불러오는 중...</div>}
-            </div>
+        <div className="card">
+          <div className="section-head">
+            <h2>사용방법 관리</h2>
+            <select value={manualTarget} onChange={(e) => setManualTarget(e.target.value)}>
+              <option value="member">회원용</option>
+              <option value="admin">관리자용</option>
+            </select>
+          </div>
 
-            <div className="form-block">
-              <input
-                placeholder="메뉴얼 제목"
-                value={manualTitle}
-                onChange={(e) => setManualTitle(e.target.value)}
-              />
-              <textarea
-                className="manual-textarea"
-                placeholder="관리자와 회원이 같이 볼 사용방법을 입력해 주세요."
-                value={manualContent}
-                onChange={(e) => setManualContent(e.target.value)}
-              />
-              <div className="button-row">
-                <button className="primary-btn" onClick={saveManual} disabled={savingManual}>
-                  {savingManual ? '저장 중...' : '메뉴얼 저장'}
-                </button>
-                <button className="secondary-btn" onClick={loadManual}>
-                  다시 불러오기
-                </button>
-              </div>
+          <div className="stack-gap">
+            <label className="field">
+              <span>제목</span>
+              <input value={manualForm.title} onChange={(e) => setManualForm({ ...manualForm, title: e.target.value })} />
+            </label>
+
+            <label className="field">
+              <span>내용</span>
+              <textarea rows="10" value={manualForm.content} onChange={(e) => setManualForm({ ...manualForm, content: e.target.value })} />
+            </label>
+
+            <div className="inline-actions wrap">
+              <button className="primary-btn" type="button" onClick={handleManualSave}>
+                저장
+              </button>
+              <button className="danger-btn" type="button" onClick={handleManualDelete}>
+                삭제
+              </button>
             </div>
-          </section>
+          </div>
         </div>
       )}
+    </div>
+  )
+}
 
-      <div className="bottom-tab-bar">
-        {adminTabs.map((tab) => (
-          <button
-            key={tab}
-            className={`tab-btn ${activeTab === tab ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab)}
-          >
-            {tab}
-          </button>
-        ))}
+function DietAdminCard({ diet, memberName, collapsed, onToggle, onSave, onDelete }) {
+  const [feedback, setFeedback] = useState(diet.coach_feedback || '')
+
+  useEffect(() => {
+    setFeedback(diet.coach_feedback || '')
+  }, [diet.coach_feedback])
+
+  return (
+    <div className="list-card">
+      <div className="list-card-top">
+        <strong>{memberName}</strong>
+        <span className="pill">{diet.log_date}</span>
       </div>
+
+      <div className="compact-text">
+        간략히보기: {diet.meal_type || '식단'} / {diet.meal_time || '-'} / {diet.content?.slice(0, 24) || ''}
+        {diet.content?.length > 24 ? '...' : ''}
+      </div>
+
+      <div className="inline-actions wrap">
+        <button type="button" className="secondary-btn" onClick={onToggle}>
+          {collapsed ? '상세히보기' : '간략히보기'}
+        </button>
+
+        <button type="button" className="danger-btn" onClick={() => onDelete(diet.id)}>
+          삭제
+        </button>
+      </div>
+
+      {!collapsed ? (
+        <DietFeedbackEditor diet={diet} feedback={feedback} setFeedback={setFeedback} onSave={onSave} />
+      ) : null}
+    </div>
+  )
+}
+
+function DietFeedbackEditor({ diet, feedback, setFeedback, onSave }) {
+  const [local, setLocal] = useState({
+    meal_type: diet.meal_type || '식단',
+    meal_time: diet.meal_time || '',
+    carb_g: diet.carb_g || 0,
+    protein_g: diet.protein_g || 0,
+    fat_g: diet.fat_g || 0,
+    product_brand: diet.product_brand || '',
+    product_name: diet.product_name || '',
+    meal_category: diet.meal_category || '일반식',
+    hunger_level: diet.hunger_level || 0,
+    member_note: diet.member_note || '',
+    content: diet.content || '',
+  })
+
+  useEffect(() => {
+    setLocal({
+      meal_type: diet.meal_type || '식단',
+      meal_time: diet.meal_time || '',
+      carb_g: diet.carb_g || 0,
+      protein_g: diet.protein_g || 0,
+      fat_g: diet.fat_g || 0,
+      product_brand: diet.product_brand || '',
+      product_name: diet.product_name || '',
+      meal_category: diet.meal_category || '일반식',
+      hunger_level: diet.hunger_level || 0,
+      member_note: diet.member_note || '',
+      content: diet.content || '',
+    })
+  }, [diet])
+
+  return (
+    <div className="detail-box stack-gap">
+      <p><strong>식단 종류:</strong> {local.meal_type}</p>
+      <p><strong>시간:</strong> {local.meal_time || '-'}</p>
+      <p><strong>내용:</strong> {local.content || '-'}</p>
+      <p><strong>탄수/단백질/지방:</strong> {local.carb_g || 0}g / {local.protein_g || 0}g / {local.fat_g || 0}g</p>
+      <p><strong>제품:</strong> {local.product_brand || '-'} / {local.product_name || '-'}</p>
+      <p><strong>식사 유형:</strong> {local.meal_category || '-'}</p>
+      <p><strong>배고픔 정도:</strong> {local.hunger_level || 0}</p>
+      <p><strong>회원 메모:</strong> {local.member_note || '-'}</p>
+
+      <label className="field">
+        <span>코치 피드백</span>
+        <textarea rows="4" value={feedback} onChange={(e) => setFeedback(e.target.value)} />
+      </label>
+
+      <button
+        type="button"
+        className="primary-btn"
+        onClick={() =>
+          onSave(diet.id, {
+            coach_feedback: feedback,
+          })
+        }
+      >
+        피드백 저장
+      </button>
     </div>
   )
 }
